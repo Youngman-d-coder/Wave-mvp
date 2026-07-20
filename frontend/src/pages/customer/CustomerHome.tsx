@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MapPin, Navigation } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { Map } from '../../components/customer/Map';
 import { BookingForm } from '../../components/customer/BookingForm';
 import { Card } from '../../components/ui/Card';
