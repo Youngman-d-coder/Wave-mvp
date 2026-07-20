@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Package, MapPin, Clock, CheckCircle, XCircle, Navigation } from 'lucide-react';
+import { Package, MapPin, CheckCircle, XCircle, Navigation } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Tabs } from '../../components/ui/Tabs';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -64,8 +63,6 @@ const mockDeliveries: DeliveryItem[] = [
 ];
 
 export const RiderDeliveries: React.FC = () => {
-  const [activeDelivery, setActiveDelivery] = useState<DeliveryItem | null>(mockDeliveries[0]);
-
   const activeDeliveries = mockDeliveries.filter(d => 
     ['rider_assigned', 'picked_up', 'in_transit'].includes(d.status)
   );

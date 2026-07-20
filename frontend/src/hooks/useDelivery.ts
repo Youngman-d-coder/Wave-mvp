@@ -17,7 +17,7 @@ export function useDelivery() {
       dropoff,
       weight,
     });
-    return response.success ? response.data : null;
+    return response.success ? (response.data ?? null) : null;
   }, [api]);
 
   const createDelivery = useCallback(async (deliveryData: Partial<Delivery>): Promise<Delivery | null> => {
