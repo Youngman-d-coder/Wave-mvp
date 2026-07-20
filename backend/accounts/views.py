@@ -134,24 +134,30 @@ class VerifyOTPView(views.APIView):
 
 class ResendOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
-
+    
     def post(self, request):
-        serializer = OTPSendSerializer(data=request.data)
+        serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            phone = serializer.validated_data['phone']
+            user = serializer.save()
             
-            # Generate new OTP
+            # Generate OTP
             otp_code = f"{random.randint(100000, 999999)}"
             OTPVerification.objects.update_or_create(
-                phone=phone,
+                phone=user.phone,
                 defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
             )
+        
+            # Send OTP
+            if user.phone:
+                send_otp(user.phone, otp_code)
+        
+            response_data = UserSerializer(user).data
+            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
+                response_data['debug_otp'] = otp_code
             
-            send_otp(phone, otp_code)
-            return Response({'message': 'OTP resent successfully'}, status=status.HTTP_200_OK)
-            
+            return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
 class MeView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
