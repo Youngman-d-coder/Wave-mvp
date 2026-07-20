@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Package, MapPin, CheckCircle, XCircle, Navigation } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
