@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useRider } from '../../hooks/useRider';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -31,11 +32,18 @@ const navItems = [
 
 export const RiderLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isOnline, setIsOnline] = useState(false);
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
+  const { riderProfile, toggleOnline, getProfile } = useRider();
+  const [isToggling, setIsToggling] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getProfile();
+  }, [getProfile]);
+
+  const isOnline = riderProfile?.is_online || false;
 
   const handleLogout = () => {
     logout();
@@ -43,9 +51,15 @@ export const RiderLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const toggleOnlineStatus = () => {
-    setIsOnline(!isOnline);
-    showSuccess(isOnline ? 'You are now offline' : 'You are now online and ready for deliveries');
+  const toggleOnlineStatus = async () => {
+    setIsToggling(true);
+    const result = await toggleOnline(!isOnline);
+    setIsToggling(false);
+    if (result.success) {
+      showSuccess(isOnline ? 'You are now offline' : 'You are now online and ready for deliveries');
+    } else {
+      showError(result.message || 'Failed to update status');
+    }
   };
 
   return (
@@ -97,19 +111,20 @@ export const RiderLayout: React.FC = () => {
               {/* Online Toggle */}
               <button
                 onClick={toggleOnlineStatus}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all ${
+                disabled={isToggling}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all disabled:opacity-50 ${
                   isOnline 
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
                     : 'bg-gray-100 dark:bg-dark-border text-gray-600 dark:text-gray-400'
                 }`}
               >
-                <Power className={`w-4 h-4 ${isOnline ? 'text-green-500' : ''}`} />
-                {isOnline ? 'Online' : 'Offline'}
+                <Power className={`w-4 h-4 ${isOnline ? 'text-green-500' : 'text-gray-400'}`} />
+                {isToggling ? '...' : isOnline ? 'Online' : 'Offline'}
               </button>
 
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-dark-border text-gray-600 dark:text-gray-400"
+                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-dark-border text-gray-600 dark:text-gray-400 transition-colors"
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>

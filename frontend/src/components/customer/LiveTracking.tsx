@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapPin, Clock, Phone, MessageSquare, Package, CheckCircle } from 'lucide-react';
+import { MapPin, Clock, Phone, MessageSquare, Package, CheckCircle, Star } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
@@ -30,6 +30,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
+  const [hoverRating, setHoverRating] = useState(0);
 
   useEffect(() => {
     const unsubscribe = subscribe('delivery_update', (data) => {
@@ -45,13 +46,29 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
   const currentStepIndex = statusSteps.findIndex(s => s.status === currentStatus);
   const isDelivered = currentStatus === 'delivered';
 
+  const handleSubmitRating = () => {
+    if (rating === 0) return;
+    onRateRider?.(rating, review);
+    setShowRating(false);
+    setRating(0);
+    setReview('');
+    setHoverRating(0);
+  };
+
+  const handleSkipRating = () => {
+    setShowRating(false);
+    setRating(0);
+    setReview('');
+    setHoverRating(0);
+  };
+
   return (
     <div className="space-y-6">
       {/* Map */}
       <div className="h-64 sm:h-80 rounded-2xl overflow-hidden">
         <Map
-          pickup={delivery.pickup.coordinates}
-          dropoff={delivery.dropoff.coordinates}
+          pickup={delivery.pickup?.coordinates}
+          dropoff={delivery.dropoff?.coordinates}
           riderLocation={riderLocation}
           showRoute={true}
           interactive={false}
@@ -62,24 +79,41 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
       {delivery.rider && (
         <Card className="p-4">
           <div className="flex items-center gap-4">
-            <Avatar src={delivery.rider.avatar} name={delivery.rider.full_name} size="lg" status="online" />
+            <Avatar 
+              src={delivery.rider.avatar} 
+              name={delivery.rider.full_name || 'Rider'} 
+              size="lg" 
+              status={delivery.rider.is_online ? 'online' : 'offline'} 
+            />
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-gray-900 dark:text-white">{delivery.rider.full_name}</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white">
+                  {delivery.rider.full_name || 'Your Rider'}
+                </h3>
                 {delivery.rider.is_verified && (
                   <span className="text-wave-500">
                     <CheckCircle className="w-4 h-4" />
                   </span>
                 )}
               </div>
-              <Rating rating={delivery.rider.rating} reviewCount={delivery.rider.total_reviews} size="sm" />
+              <Rating 
+                rating={delivery.rider.rating || 0} 
+                reviewCount={delivery.rider.total_reviews || 0} 
+                size="sm" 
+              />
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
-                <span>{delivery.rider.stats.total_kilometers.toFixed(1)} km driven</span>
-                <span>{delivery.rider.stats.successful_rides} deliveries</span>
+                <span>{(delivery.rider.stats?.total_kilometers || 0).toFixed(1)} km driven</span>
+                <span>{delivery.rider.stats?.successful_rides || 0} deliveries</span>
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" className="p-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="p-2"
+                onClick={() => delivery.rider?.phone && window.open(`tel:${delivery.rider.phone}`, '_self')}
+                disabled={!delivery.rider.phone}
+              >
                 <Phone className="w-5 h-5" />
               </Button>
               <Button variant="ghost" size="sm" className="p-2">
@@ -130,14 +164,14 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
         </div>
       </Card>
 
-      {/* Rating Modal */}
+      {/* Rating Section */}
       {isDelivered && onRateRider && !showRating && (
         <Card className="p-6 text-center">
           <h3 className="font-heading font-bold text-gray-900 dark:text-white mb-2">
-            Delivery Complete!
+            Delivery Complete! 🎉
           </h3>
           <p className="text-gray-500 dark:text-gray-400 mb-4">
-            How was your experience with {delivery.rider?.full_name}?
+            How was your experience with {delivery.rider?.full_name || 'your rider'}?
           </p>
           <Button onClick={() => setShowRating(true)} variant="primary">
             Rate Rider
@@ -155,14 +189,19 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
               <button
                 key={star}
                 onClick={() => setRating(star)}
+                onMouseEnter={() => setHoverRating(star)}
+                onMouseLeave={() => setHoverRating(0)}
                 className={`text-3xl transition-transform hover:scale-110 ${
-                  star <= rating ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'
+                  star <= (hoverRating || rating) ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'
                 }`}
               >
                 ★
               </button>
             ))}
           </div>
+          <p className="text-center text-sm text-gray-500 mb-4">
+            {rating > 0 ? ['Terrible', 'Poor', 'Average', 'Good', 'Excellent'][rating - 1] : 'Tap a star to rate'}
+          </p>
           <textarea
             value={review}
             onChange={(e) => setReview(e.target.value)}
@@ -170,16 +209,18 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
             rows={3}
             className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-card text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-wave-500 resize-none mb-4"
           />
-          <Button
-            onClick={() => {
-              onRateRider?.(rating, review);
-              setShowRating(false);
-            }}
-            disabled={rating === 0}
-            fullWidth
-          >
-            Submit Review
-          </Button>
+          <div className="flex gap-3">
+            <Button variant="secondary" className="flex-1" onClick={handleSkipRating}>
+              Skip
+            </Button>
+            <Button
+              onClick={handleSubmitRating}
+              disabled={rating === 0}
+              className="flex-1"
+            >
+              Submit Review
+            </Button>
+          </div>
         </Card>
       )}
     </div>

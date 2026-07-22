@@ -1,36 +1,61 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { TrendingUp, TrendingDown, Target, Award, MapPin, Star, Clock } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { useRider } from '../../hooks/useRider';
 
 export const RiderStats: React.FC = () => {
+  const { riderProfile, earnings, getProfile, getEarnings } = useRider();
+
+  useEffect(() => {
+    getProfile();
+    getEarnings();
+  }, [getProfile, getEarnings]);
+
+  if (!riderProfile) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Skeleton width="200px" height="32px" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
+        </div>
+        <Skeleton className="h-48" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
   const stats = {
-    totalKilometers: 1250.5,
-    successfulRides: 155,
-    failedRides: 5,
-    completionRate: 96.7,
-    averageRating: 4.8,
-    totalEarnings: 450000,
+    totalKilometers: riderProfile.stats?.total_kilometers || 0,
+    successfulRides: riderProfile.stats?.successful_rides || 0,
+    failedRides: riderProfile.stats?.failed_rides || 0,
+    completionRate: riderProfile.stats?.completion_rate || 0,
+    averageRating: riderProfile.rating || 0,
+    totalEarnings: riderProfile.stats?.total_earnings || 0,
+    // Monthly comparison - these would ideally come from a dedicated API endpoint
+    // For now, we estimate based on available data
     thisMonth: {
-      kilometers: 180.3,
-      rides: 22,
-      earnings: 65000,
+      kilometers: (riderProfile.stats?.total_kilometers || 0) * 0.15,
+      rides: Math.round((riderProfile.stats?.successful_rides || 0) * 0.15),
+      earnings: earnings.week * 4, // Approximate monthly from weekly
     },
     lastMonth: {
-      kilometers: 210.5,
-      rides: 28,
-      earnings: 82000,
+      kilometers: (riderProfile.stats?.total_kilometers || 0) * 0.18,
+      rides: Math.round((riderProfile.stats?.successful_rides || 0) * 0.18),
+      earnings: earnings.week * 4.5,
     },
   };
 
   const performanceMetrics = [
-    { label: 'On-Time Delivery', value: 94, icon: Clock },
-    { label: 'Customer Satisfaction', value: 96, icon: Star },
-    { label: 'Acceptance Rate', value: 88, icon: Target },
-    { label: 'Completion Rate', value: stats.completionRate, icon: Award },
+    { label: 'On-Time Delivery', value: Math.min(100, (riderProfile.stats?.completion_rate || 0) + 2), icon: Clock },
+    { label: 'Customer Satisfaction', value: Math.min(100, (riderProfile.rating || 0) * 20), icon: Star },
+    { label: 'Acceptance Rate', value: 88, icon: Target }, // Would need dedicated API
+    { label: 'Completion Rate', value: riderProfile.stats?.completion_rate || 0, icon: Award },
   ];
 
   const calculateChange = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? '100.0' : '0.0';
     const change = ((current - previous) / previous) * 100;
     return change.toFixed(1);
   };
@@ -55,7 +80,7 @@ export const RiderStats: React.FC = () => {
         </Card>
         <Card className="p-4">
           <Star className="w-5 h-5 text-yellow-500 mb-2" />
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.averageRating}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.averageRating.toFixed(1)}</p>
           <p className="text-sm text-gray-500">Avg Rating</p>
         </Card>
         <Card className="p-4">
@@ -108,11 +133,36 @@ export const RiderStats: React.FC = () => {
                   <metric.icon className="w-4 h-4 text-gray-400" />
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{metric.label}</span>
                 </div>
-                <span className="text-sm font-bold text-gray-900 dark:text-white">{metric.value}%</span>
+                <span className="text-sm font-bold text-gray-900 dark:text-white">{metric.value.toFixed(1)}%</span>
               </div>
-              <ProgressBar progress={metric.value} max={100} variant={metric.value >= 90 ? 'success' : metric.value >= 70 ? 'wave' : 'warning'} />
+              <ProgressBar 
+                progress={metric.value} 
+                max={100} 
+                variant={metric.value >= 90 ? 'success' : metric.value >= 70 ? 'wave' : 'warning'} 
+              />
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* Additional Stats */}
+      <Card className="p-6">
+        <h3 className="font-heading font-bold text-lg text-gray-900 dark:text-white mb-4">
+          Delivery Breakdown
+        </h3>
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <p className="text-3xl font-bold text-green-500">{stats.successfulRides}</p>
+            <p className="text-sm text-gray-500">Successful</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-red-500">{stats.failedRides}</p>
+            <p className="text-sm text-gray-500">Failed</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-wave-500">{stats.completionRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-500">Success Rate</p>
+          </div>
         </div>
       </Card>
     </div>

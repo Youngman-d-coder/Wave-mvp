@@ -2,6 +2,7 @@ import React from 'react';
 import { AuthProvider } from './AuthContext';
 import { ThemeProvider } from './ThemeContext';
 import { ToastProvider } from './ToastContext';
+import { NotificationProvider } from './NotificationContext';
 import { WebSocketProvider } from './WebSocketContext';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -9,9 +10,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <ThemeProvider>
       <AuthProvider>
         <ToastProvider>
-          <WebSocketProvider>
-            {children}
-          </WebSocketProvider>
+          <NotificationProvider>
+            <WebSocketProvider>
+              {children}
+            </WebSocketProvider>
+          </NotificationProvider>
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>

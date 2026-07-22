@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapPin, User, Phone, Weight, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
 import { Stepper } from '../../components/ui/Stepper';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { GeoLocation, PackageType } from '../../types';
 
 interface BookingFormProps {
   pickup: GeoLocation | null;
   dropoff: GeoLocation | null;
+  pickupAddress?: string;
+  dropoffAddress?: string;
   onSubmit: (data: BookingData) => void;
   fare: { total: number; currency: string } | null;
   isCalculating: boolean;
@@ -40,6 +43,8 @@ const steps = [
 export const BookingForm: React.FC<BookingFormProps> = ({
   pickup,
   dropoff,
+  pickupAddress,
+  dropoffAddress,
   onSubmit,
   fare,
   isCalculating,
@@ -79,6 +84,11 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     if (currentStep > 0) setCurrentStep(prev => prev - 1);
   };
 
+  // Format package type for display
+  const formatPackageType = (type: string) => {
+    return type.replaceAll('_', ' ').replace(/\w/g, l => l.toUpperCase());
+  };
+
   return (
     <div className="space-y-6">
       <Stepper steps={steps} currentStep={currentStep} />
@@ -95,7 +105,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                 <p className="font-medium text-gray-900 dark:text-white">Pickup Location</p>
                 {pickup ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {pickup.lat.toFixed(4)}, {pickup.lng.toFixed(4)}
+                    {pickupAddress || `${pickup.lat.toFixed(4)}, ${pickup.lng.toFixed(4)}`}
                   </p>
                 ) : (
                   <p className="text-sm text-gray-400 dark:text-gray-600 mt-1">
@@ -115,7 +125,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                 <p className="font-medium text-gray-900 dark:text-white">Drop-off Location</p>
                 {dropoff ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {dropoff.lat.toFixed(4)}, {dropoff.lng.toFixed(4)}
+                    {dropoffAddress || `${dropoff.lat.toFixed(4)}, ${dropoff.lng.toFixed(4)}`}
                   </p>
                 ) : (
                   <p className="text-sm text-gray-400 dark:text-gray-600 mt-1">
@@ -154,9 +164,11 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             type="number"
             min="0.1"
             step="0.1"
+            max={packageTypes.find(p => p.type === bookingData.packageType)?.maxWeight || 50}
             value={bookingData.weight}
-            onChange={(e) => updateField('weight', parseFloat(e.target.value))}
+            onChange={(e) => updateField('weight', parseFloat(e.target.value) || 0)}
             leftIcon={<Weight className="w-5 h-5" />}
+            helperText={`Max weight: ${packageTypes.find(p => p.type === bookingData.packageType)?.maxWeight || 50}kg`}
           />
         </div>
       )}
@@ -170,6 +182,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             onChange={(e) => updateField('recipientName', e.target.value)}
             leftIcon={<User className="w-5 h-5" />}
             placeholder="Enter recipient's full name"
+            required
           />
           <Input
             label="Recipient Phone"
@@ -178,10 +191,11 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             onChange={(e) => updateField('recipientPhone', e.target.value)}
             leftIcon={<Phone className="w-5 h-5" />}
             placeholder="+234..."
+            required
           />
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Delivery Notes
+              Delivery Notes <span className="text-gray-400">(Optional)</span>
             </label>
             <textarea
               value={bookingData.notes}
@@ -204,8 +218,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             <div className="space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Package Type</span>
-                <span className="font-medium text-gray-900 dark:text-white capitalize">
-                  {bookingData.packageType.replace('_', ' ')}
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {formatPackageType(bookingData.packageType)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -216,6 +230,16 @@ export const BookingForm: React.FC<BookingFormProps> = ({
                 <span className="text-gray-500 dark:text-gray-400">Recipient</span>
                 <span className="font-medium text-gray-900 dark:text-white">{bookingData.recipientName}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500 dark:text-gray-400">Phone</span>
+                <span className="font-medium text-gray-900 dark:text-white">{bookingData.recipientPhone}</span>
+              </div>
+              {bookingData.notes && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500 dark:text-gray-400">Notes</span>
+                  <span className="font-medium text-gray-900 dark:text-white text-right max-w-[60%]">{bookingData.notes}</span>
+                </div>
+              )}
               <div className="border-t border-gray-100 dark:border-dark-border pt-3 mt-3">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 dark:text-gray-400">Estimated Fare</span>
@@ -248,7 +272,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           className="flex-1"
           rightIcon={currentStep < steps.length - 1 ? <ChevronRight className="w-4 h-4" /> : undefined}
         >
-          {currentStep === steps.length - 1 ? 'Confirm & Pay' : 'Continue'}
+          {currentStep === steps.length - 1 ? 'Confirm & Book' : 'Continue'}
         </Button>
       </div>
     </div>

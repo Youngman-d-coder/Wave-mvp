@@ -1,90 +1,154 @@
-import React, { useState } from 'react';
-import { User, Mail, Phone, Camera, Lock, Shield } from 'lucide-react';
-import { Card } from '../../components/ui/Card';
+import React, { useState, useEffect } from 'react';
+import { Camera, Lock, Shield, Package, Heart, DollarSign, Calendar } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { Card } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
+import { Badge } from '../../components/ui/Badge';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useDelivery } from '../../hooks/useDelivery';
 
 export const CustomerProfile: React.FC = () => {
   const { user, updateProfile } = useAuth();
   const { showSuccess, showError } = useToast();
+  const { deliveryHistory, getHistory } = useDelivery();
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     full_name: user?.full_name || '',
     email: user?.email || '',
     phone: user?.phone || '',
   });
 
+  useEffect(() => {
+    getHistory();
+  }, [getHistory]);
+
+  // Sync form data when user loads
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        full_name: user.full_name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+      });
+    }
+  }, [user]);
+
+  // Calculate real stats from delivery history
+  const totalDeliveries = deliveryHistory.length;
+  const totalSpent = deliveryHistory.reduce((sum, d) => sum + (d.fare?.total || 0), 0);
+  const favoriteCount = user?.favorite_riders?.length || 0;
+  const memberSince = user?.created_at 
+    ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : '';
+
   const handleSave = async () => {
+    setIsLoading(true);
     try {
       await updateProfile(formData);
       showSuccess('Profile updated successfully');
       setIsEditing(false);
-    } catch {
-      showError('Failed to update profile');
+    } catch (err: any) {
+      showError(err.message || 'Failed to update profile');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const stats = [
-    { label: 'Total Deliveries', value: '24' },
-    { label: 'Total Spent', value: '₦45,200' },
-    { label: 'Favorite Riders', value: '5' },
-    { label: 'Member Since', value: 'Jan 2026' },
-  ];
+  const handleCancel = () => {
+    setFormData({
+      full_name: user?.full_name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+    });
+    setIsEditing(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <Skeleton className="h-32" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white mb-6">
-        Profile
-      </h1>
-
+    <div className="max-w-2xl mx-auto space-y-6">
       {/* Profile Header */}
-      <Card className="p-6 mb-6">
-        <div className="flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative">
-            <Avatar src={user?.avatar} name={user?.full_name} size="xl" />
-            <button className="absolute bottom-0 right-0 w-8 h-8 bg-wave-500 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-wave-600 transition-colors">
-              <Camera className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="text-center sm:text-left">
-            <h2 className="text-xl font-heading font-bold text-gray-900 dark:text-white">
-              {user?.full_name}
-            </h2>
-            <p className="text-gray-500 dark:text-gray-400">{user?.email}</p>
-            <div className="flex items-center gap-2 mt-2 justify-center sm:justify-start">
-              <span className="badge-wave">Verified</span>
-              <span className="badge-success">Active</span>
-            </div>
-          </div>
+      <div className="text-center">
+        <div className="relative inline-block">
+          <Avatar src={user.avatar} name={user.full_name} size="xl" />
+          <button 
+            className="absolute bottom-0 right-0 w-8 h-8 bg-wave-500 rounded-full flex items-center justify-center text-white hover:bg-wave-600 transition-colors shadow-lg"
+            title="Change avatar"
+            onClick={() => showError('Avatar upload coming soon')}
+          >
+            <Camera className="w-4 h-4" />
+          </button>
         </div>
-      </Card>
+        <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white mt-4">
+          {user.full_name}
+        </h1>
+        <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <Badge variant="wave">Customer</Badge>
+          {user.is_verified && (
+            <Badge variant="success" className="flex items-center gap-1">
+              <Shield className="w-3 h-3" />
+              Verified
+            </Badge>
+          )}
+        </div>
+      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="p-4 text-center">
-            <p className="text-2xl font-bold text-wave-500">{stat.value}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stat.label}</p>
-          </Card>
-        ))}
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="p-4 text-center">
+          <Package className="w-5 h-5 text-wave-500 mx-auto mb-2" />
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalDeliveries}</p>
+          <p className="text-xs text-gray-500">Deliveries</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <DollarSign className="w-5 h-5 text-green-500 mx-auto mb-2" />
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">₦{totalSpent.toLocaleString()}</p>
+          <p className="text-xs text-gray-500">Total Spent</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <Heart className="w-5 h-5 text-red-500 mx-auto mb-2" />
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{favoriteCount}</p>
+          <p className="text-xs text-gray-500">Favorites</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <Calendar className="w-5 h-5 text-blue-500 mx-auto mb-2" />
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{memberSince}</p>
+          <p className="text-xs text-gray-500">Member Since</p>
+        </Card>
       </div>
 
       {/* Edit Form */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="font-heading font-bold text-lg text-gray-900 dark:text-white">
+          <h2 className="text-lg font-heading font-bold text-gray-900 dark:text-white">
             Personal Information
-          </h3>
-          <Button
-            variant={isEditing ? 'secondary' : 'outline'}
-            size="sm"
-            onClick={() => setIsEditing(!isEditing)}
-          >
-            {isEditing ? 'Cancel' : 'Edit'}
-          </Button>
+          </h2>
+          {!isEditing ? (
+            <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+              Edit
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSave} isLoading={isLoading}>
+                Save
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -93,7 +157,6 @@ export const CustomerProfile: React.FC = () => {
             value={formData.full_name}
             onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
             disabled={!isEditing}
-            leftIcon={<User className="w-5 h-5" />}
           />
           <Input
             label="Email"
@@ -101,49 +164,39 @@ export const CustomerProfile: React.FC = () => {
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
             disabled={!isEditing}
-            leftIcon={<Mail className="w-5 h-5" />}
           />
           <Input
             label="Phone"
+            type="tel"
             value={formData.phone}
             onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
             disabled={!isEditing}
-            leftIcon={<Phone className="w-5 h-5" />}
           />
         </div>
-
-        {isEditing && (
-          <div className="mt-6 flex gap-3">
-            <Button variant="secondary" onClick={() => setIsEditing(false)} className="flex-1">
-              Cancel
-            </Button>
-            <Button onClick={handleSave} className="flex-1">
-              Save Changes
-            </Button>
-          </div>
-        )}
       </Card>
 
       {/* Security */}
-      <Card className="p-6 mt-6">
-        <h3 className="font-heading font-bold text-lg text-gray-900 dark:text-white mb-4">
+      <Card className="p-6">
+        <h2 className="text-lg font-heading font-bold text-gray-900 dark:text-white mb-4">
           Security
-        </h3>
+        </h2>
         <div className="space-y-3">
-          <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-border transition-colors text-left">
-            <Lock className="w-5 h-5 text-gray-400" />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">Change Password</p>
-              <p className="text-sm text-gray-500">Update your password regularly</p>
-            </div>
-          </button>
-          <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-border transition-colors text-left">
-            <Shield className="w-5 h-5 text-gray-400" />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
-              <p className="text-sm text-gray-500">Add an extra layer of security</p>
-            </div>
-          </button>
+          <Button 
+            variant="secondary" 
+            className="w-full justify-start" 
+            leftIcon={<Lock className="w-5 h-5" />}
+            onClick={() => showError('Password change coming soon')}
+          >
+            Change Password
+          </Button>
+          <Button 
+            variant="secondary" 
+            className="w-full justify-start" 
+            leftIcon={<Shield className="w-5 h-5" />}
+            onClick={() => showError('2FA coming soon')}
+          >
+            Enable Two-Factor Authentication
+          </Button>
         </div>
       </Card>
     </div>

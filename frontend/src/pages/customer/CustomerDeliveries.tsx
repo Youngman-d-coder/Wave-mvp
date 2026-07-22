@@ -1,115 +1,164 @@
 import React, { useEffect, useState } from 'react';
-import { Package, Clock, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Package, MapPin, Calendar } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
-import { Avatar } from '../../components/ui/Avatar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Tabs } from '../../components/ui/Tabs';
 import { useDelivery } from '../../hooks/useDelivery';
+import { useToast } from '../../contexts/ToastContext';
 import { Delivery } from '../../types';
 
 export const CustomerDeliveries: React.FC = () => {
-  const { getHistory } = useDelivery();
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const { deliveryHistory, getHistory } = useDelivery();
+  const { showError } = useToast();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('active');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadHistory();
   }, []);
 
   const loadHistory = async () => {
-    const response = await getHistory();
-    if (response.success && response.data) {
-      setDeliveries(response.data.results || []);
+    setIsLoading(true);
+    const result = await getHistory();
+    if (!result.success) {
+      showError(result.message || 'Failed to load delivery history');
     }
+    setIsLoading(false);
   };
 
-  const activeDeliveries = deliveries.filter(d => 
-    !['delivered', 'cancelled', 'failed'].includes(d.status)
-  );
+  const activeStatuses = ['pending', 'searching_rider', 'rider_assigned', 'rider_arrived', 'picked_up', 'in_transit', 'near_destination'];
+  const completedStatuses = ['delivered'];
+  const cancelledStatuses = ['cancelled', 'failed'];
 
-  const pastDeliveries = deliveries.filter(d => 
-    ['delivered', 'cancelled', 'failed'].includes(d.status)
-  );
+  const filteredDeliveries = deliveryHistory.filter((d: Delivery) => {
+    if (activeTab === 'active') return activeStatuses.includes(d.status);
+    if (activeTab === 'completed') return completedStatuses.includes(d.status);
+    if (activeTab === 'cancelled') return cancelledStatuses.includes(d.status);
+    return true;
+  });
 
-  const DeliveryCard: React.FC<{ delivery: Delivery }> = ({ delivery }) => (
-    <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => {
-      window.location.href = `/customer/tracking/${delivery.id}`;
-    }}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-mono text-sm text-gray-500">#{delivery.tracking_number}</span>
-            <StatusBadge status={delivery.status} />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              From: {delivery.pickup.address}
-            </p>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              To: {delivery.dropoff.address}
-            </p>
-          </div>
-          {delivery.rider && (
-            <div className="flex items-center gap-2 mt-3">
-              <Avatar src={delivery.rider.avatar} name={delivery.rider.full_name} size="xs" />
-              <span className="text-sm text-gray-600 dark:text-gray-400">{delivery.rider.full_name}</span>
-            </div>
-          )}
-        </div>
-        <div className="text-right">
-          <p className="font-bold text-wave-500">
-            {delivery.payment.currency} {delivery.fare.total.toFixed(2)}
-          </p>
-          <ChevronRight className="w-5 h-5 text-gray-400 ml-auto mt-2" />
-        </div>
-      </div>
-    </Card>
-  );
+  const handleDeliveryClick = (id: string) => {
+    navigate(`/customer/tracking/${id}`);
+  };
 
   const tabs = [
     {
       id: 'active',
-      label: `Active (${activeDeliveries.length})`,
-      icon: <Package className="w-4 h-4" />,
-      content: activeDeliveries.length > 0 ? (
+      label: 'Active',
+      content: (
         <div className="space-y-4">
-          {activeDeliveries.map(d => <DeliveryCard key={d.id} delivery={d} />)}
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-32 bg-gray-100 dark:bg-dark-border animate-pulse rounded-xl" />
+              ))}
+            </div>
+          ) : filteredDeliveries.length === 0 ? (
+            <EmptyState
+              icon={<Package className="w-16 h-16 text-gray-300 dark:text-gray-600" />}
+              title="No active deliveries"
+              description="You don't have any active deliveries right now"
+              actionLabel="Book a Delivery"
+              onAction={() => navigate('/customer')}
+            />
+          ) : (
+            filteredDeliveries.map((delivery) => (
+              <DeliveryCard 
+                key={delivery.id} 
+                delivery={delivery} 
+                onClick={() => handleDeliveryClick(delivery.id)} 
+              />
+            ))
+          )}
         </div>
-      ) : (
-        <EmptyState
-          icon={<Package className="w-12 h-12" />}
-          title="No active deliveries"
-          description="Your active deliveries will appear here"
-          actionLabel="Book a Delivery"
-          onAction={() => window.location.href = '/customer'}
-        />
       ),
     },
     {
       id: 'history',
       label: 'History',
-      icon: <Clock className="w-4 h-4" />,
-      content: pastDeliveries.length > 0 ? (
+      content: (
         <div className="space-y-4">
-          {pastDeliveries.map(d => <DeliveryCard key={d.id} delivery={d} />)}
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-32 bg-gray-100 dark:bg-dark-border animate-pulse rounded-xl" />
+              ))}
+            </div>
+          ) : filteredDeliveries.length === 0 ? (
+            <EmptyState
+              icon={<Package className="w-16 h-16 text-gray-300 dark:text-gray-600" />}
+              title="No delivery history"
+              description="Your completed deliveries will appear here"
+            />
+          ) : (
+            filteredDeliveries.map((delivery) => (
+              <DeliveryCard 
+                key={delivery.id} 
+                delivery={delivery} 
+                onClick={() => handleDeliveryClick(delivery.id)} 
+              />
+            ))
+          )}
         </div>
-      ) : (
-        <EmptyState
-          icon={<Clock className="w-12 h-12" />}
-          title="No delivery history"
-          description="Completed deliveries will appear here"
-        />
       ),
     },
   ];
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white mb-6">
         My Deliveries
       </h1>
-      <Tabs tabs={tabs} variant="underline" />
+      <Tabs 
+        tabs={tabs} 
+        defaultTab="active"
+        variant="underline"
+      />
     </div>
+  );
+};
+
+const DeliveryCard: React.FC<{ delivery: Delivery; onClick: () => void }> = ({ delivery, onClick }) => {
+  return (
+    <Card 
+      className="p-4 hover:shadow-md transition-shadow cursor-pointer" 
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-mono text-sm text-gray-500 dark:text-gray-400">
+              #{delivery.tracking_number}
+            </span>
+            <StatusBadge status={delivery.status} />
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            <Calendar className="w-3 h-3 inline mr-1" />
+            {new Date(delivery.created_at).toLocaleDateString()}
+          </p>
+        </div>
+        <span className="font-bold text-wave-500">
+          {delivery.payment?.currency || '₦'} {delivery.fare?.total?.toFixed(2) || '0.00'}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-sm">
+            <MapPin className="w-4 h-4 text-wave-500 flex-shrink-0" />
+            <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.pickup?.address || 'Pickup location'}</span>
+          </div>
+          <div className="w-0.5 h-4 bg-gray-200 dark:bg-dark-border ml-2 my-1" />
+          <div className="flex items-center gap-2 text-sm">
+            <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.dropoff?.address || 'Drop-off location'}</span>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 };
 

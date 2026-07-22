@@ -1,182 +1,196 @@
-import React, { useState } from 'react';
-import { DollarSign, ArrowUpRight, ArrowDownLeft, TrendingUp, Wallet, CreditCard } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowDownLeft, ArrowUpRight, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Tabs } from '../../components/ui/Tabs';
-
-interface Transaction {
-  id: string;
-  type: 'payment' | 'payout' | 'withdrawal' | 'commission';
-  amount: number;
-  description: string;
-  date: string;
-  status: 'completed' | 'pending' | 'failed';
-  party: string;
-}
-
-const mockTransactions: Transaction[] = [
-  { id: '1', type: 'payment', amount: 2500, description: 'Delivery #WAV-1042', date: '2026-07-14 14:30', status: 'completed', party: 'Customer: Alice' },
-  { id: '2', type: 'commission', amount: 250, description: 'Commission from #WAV-1042', date: '2026-07-14 14:30', status: 'completed', party: 'Wave' },
-  { id: '3', type: 'payout', amount: 2250, description: 'Rider payout #WAV-1042', date: '2026-07-14 14:30', status: 'completed', party: 'Rider: John Doe' },
-  { id: '4', type: 'withdrawal', amount: 50000, description: 'Rider withdrawal request', date: '2026-07-13 18:00', status: 'pending', party: 'Rider: Jane Smith' },
-  { id: '5', type: 'payment', amount: 3200, description: 'Delivery #WAV-1043', date: '2026-07-13 12:15', status: 'completed', party: 'Customer: Bob' },
-];
+import { Skeleton } from '../../components/ui/Skeleton';
+import { useAdmin } from '../../hooks/useAdmin';
 
 export const AdminFinance: React.FC = () => {
+  const { transactions, getTransactions, dashboardStats, getDashboardStats, isLoading } = useAdmin();
   const [period, setPeriod] = useState('today');
 
-  const stats = {
-    totalRevenue: 2450000,
-    totalCommission: 245000,
-    totalPayouts: 1980000,
-    pendingWithdrawals: 125000,
+  useEffect(() => {
+    getDashboardStats();
+    getTransactions(period);
+  }, [getDashboardStats, getTransactions, period]);
+
+  const stats = dashboardStats || {
+    total_revenue: 0,
+    total_commission: 0,
+    total_payouts: 0,
+    pending_withdrawals: 0,
   };
 
-  const TransactionRow: React.FC<{ tx: Transaction }> = ({ tx }) => (
-    <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-dark-border last:border-0">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-          tx.type === 'payment' ? 'bg-green-100 dark:bg-green-900/30 text-green-500' :
-          tx.type === 'payout' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-500' :
-          tx.type === 'commission' ? 'bg-wave-100 dark:bg-wave-900/30 text-wave-500' :
-          'bg-red-100 dark:bg-red-900/30 text-red-500'
-        }`}>
-          {tx.type === 'payment' ? <ArrowDownLeft className="w-5 h-5" /> :
-           tx.type === 'payout' || tx.type === 'withdrawal' ? <ArrowUpRight className="w-5 h-5" /> :
-           <DollarSign className="w-5 h-5" />}
-        </div>
-        <div>
-          <p className="font-medium text-gray-900 dark:text-white">{tx.description}</p>
-          <p className="text-sm text-gray-500">{tx.party} • {tx.date}</p>
-        </div>
-      </div>
-      <div className="text-right">
-        <p className={`font-bold ${
-          tx.type === 'payment' || tx.type === 'commission' ? 'text-green-500' : 'text-red-500'
-        }`}>
-          {tx.type === 'payment' || tx.type === 'commission' ? '+' : '-'}₦{tx.amount.toLocaleString()}
-        </p>
-        <Badge variant={tx.status === 'completed' ? 'success' : tx.status === 'pending' ? 'warning' : 'error'} size="sm">
-          {tx.status}
-        </Badge>
-      </div>
-    </div>
-  );
+  const periodOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'This Week' },
+    { value: 'month', label: 'This Month' },
+    { value: 'year', label: 'This Year' },
+  ];
+
+  const filteredTransactions = transactions.filter((tx: any) => {
+    if (activeTab === 'payments') return tx.type === 'payment';
+    if (activeTab === 'payouts') return tx.type === 'payout';
+    if (activeTab === 'commissions') return tx.type === 'commission';
+    return true;
+  });
+
+  const [activeTab, setActiveTab] = useState('all');
 
   const tabs = [
     {
       id: 'all',
-      label: 'All Transactions',
-      content: (
-        <div className="space-y-2">
-          {mockTransactions.map(tx => <TransactionRow key={tx.id} tx={tx} />)}
-        </div>
-      ),
+      label: 'All',
+      content: <TransactionList transactions={filteredTransactions} isLoading={isLoading} />,
     },
     {
       id: 'payments',
       label: 'Payments',
-      content: (
-        <div className="space-y-2">
-          {mockTransactions.filter(t => t.type === 'payment').map(tx => <TransactionRow key={tx.id} tx={tx} />)}
-        </div>
-      ),
+      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'payment')} isLoading={isLoading} />,
     },
     {
       id: 'payouts',
       label: 'Payouts',
-      content: (
-        <div className="space-y-2">
-          {mockTransactions.filter(t => t.type === 'payout' || t.type === 'withdrawal').map(tx => <TransactionRow key={tx.id} tx={tx} />)}
-        </div>
-      ),
+      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'payout')} isLoading={isLoading} />,
     },
     {
       id: 'commissions',
       label: 'Commissions',
-      content: (
-        <div className="space-y-2">
-          {mockTransactions.filter(t => t.type === 'commission').map(tx => <TransactionRow key={tx.id} tx={tx} />)}
-        </div>
-      ),
+      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'commission')} isLoading={isLoading} />,
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white">
           Finance
         </h1>
         <div className="flex gap-2">
-          {['today', 'week', 'month', 'year'].map((p) => (
+          {periodOptions.map((opt) => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
+              key={opt.value}
+              onClick={() => setPeriod(opt.value)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                period === p
+                period === opt.value
                   ? 'bg-wave-500 text-white'
-                  : 'bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border text-gray-600'
+                  : 'bg-gray-100 dark:bg-dark-border text-gray-600 dark:text-gray-400 hover:bg-gray-200'
               }`}
             >
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {opt.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-500" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Revenue</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">₦{stats.totalRevenue.toLocaleString()}</p>
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <DollarSign className="w-8 h-8 text-green-500" />
+            <Badge variant="success">Revenue</Badge>
           </div>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            ₦{(stats.total_revenue / 1000000).toFixed(1)}M
+          </p>
+          <p className="text-sm text-gray-500">Total Revenue</p>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-wave-100 dark:bg-wave-900/30 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-wave-500" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Commission</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">₦{stats.totalCommission.toLocaleString()}</p>
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <TrendingUp className="w-8 h-8 text-wave-500" />
+            <Badge variant="wave">Commission</Badge>
           </div>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            ₦{(stats.total_commission / 1000).toFixed(0)}K
+          </p>
+          <p className="text-sm text-gray-500">Total Commission</p>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Rider Payouts</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">₦{stats.totalPayouts.toLocaleString()}</p>
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <ArrowUpRight className="w-8 h-8 text-blue-500" />
+            <Badge variant="info">Payouts</Badge>
           </div>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            ₦{(stats.total_payouts / 1000000).toFixed(1)}M
+          </p>
+          <p className="text-sm text-gray-500">Rider Payouts</p>
         </Card>
         <Card className="p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-              <CreditCard className="w-5 h-5 text-yellow-500" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Pending Withdrawals</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">₦{stats.pendingWithdrawals.toLocaleString()}</p>
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <TrendingDown className="w-8 h-8 text-red-500" />
+            <Badge variant="warning">Pending</Badge>
           </div>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            ₦{(stats.pending_withdrawals / 1000).toFixed(0)}K
+          </p>
+          <p className="text-sm text-gray-500">Pending Withdrawals</p>
         </Card>
       </div>
 
       {/* Transactions */}
       <Card className="p-6">
-        <Tabs tabs={tabs} variant="underline" />
+        <h3 className="font-heading font-bold text-lg text-gray-900 dark:text-white mb-4">
+          Transactions
+        </h3>
+        <Tabs tabs={tabs} defaultTab="all" variant="underline" />
       </Card>
+    </div>
+  );
+};
+
+const TransactionList: React.FC<{ transactions: any[]; isLoading: boolean }> = ({ transactions, isLoading }) => {
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-16 bg-gray-100 dark:bg-dark-border animate-pulse rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-500 dark:text-gray-400">No transactions found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {transactions.map((tx) => (
+        <div key={tx.id} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-dark-border last:border-0">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+              tx.type === 'payment' 
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-500'
+                : tx.type === 'commission'
+                ? 'bg-wave-100 dark:bg-wave-900/30 text-wave-500'
+                : tx.type === 'payout'
+                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'
+                : 'bg-red-100 dark:bg-red-900/30 text-red-500'
+            }`}>
+              {tx.type === 'payment' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+            </div>
+            <div>
+              <p className="font-medium text-gray-900 dark:text-white">{tx.description}</p>
+              <p className="text-sm text-gray-500">{new Date(tx.date).toLocaleString()}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={`font-bold ${
+              tx.type === 'payment' || tx.type === 'commission' ? 'text-green-500' : 'text-red-500'
+            }`}>
+              {tx.type === 'payment' || tx.type === 'commission' ? '+' : '-'}₦{tx.amount.toLocaleString()}
+            </p>
+            <Badge variant={tx.status === 'completed' ? 'success' : tx.status === 'pending' ? 'warning' : 'error'} size="sm">
+              {tx.status}
+            </Badge>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GeoLocation } from '../types';
 
 interface GeolocationState {
@@ -15,17 +15,29 @@ export function useGeolocation() {
     isLoading: true,
     permission: null,
   });
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setState(prev => ({ ...prev, error: 'Geolocation is not supported', isLoading: false }));
+      if (isMountedRef.current) {
+        setState(prev => ({ ...prev, error: 'Geolocation is not supported', isLoading: false }));
+      }
       return;
     }
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    if (isMountedRef.current) {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+    }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (!isMountedRef.current) return;
         setState({
           location: {
             lat: position.coords.latitude,
@@ -37,6 +49,7 @@ export function useGeolocation() {
         });
       },
       (error) => {
+        if (!isMountedRef.current) return;
         setState(prev => ({
           ...prev,
           error: error.message,
@@ -53,6 +66,7 @@ export function useGeolocation() {
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
+        if (!isMountedRef.current) return;
         const location = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
@@ -61,6 +75,7 @@ export function useGeolocation() {
         callback(location);
       },
       (error) => {
+        if (!isMountedRef.current) return;
         setState(prev => ({ ...prev, error: error.message, isLoading: false }));
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }

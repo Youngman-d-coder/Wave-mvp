@@ -19,11 +19,18 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const wsRef = useRef<WebSocket | null>(null);
   const subscribersRef = useRef<Map<string, Set<(data: any) => void>>>(new Map());
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const tokenRef = useRef(token);
+
+  // Keep token ref in sync
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
 
   const connect = useCallback(() => {
-    if (!token || wsRef.current?.readyState === WebSocket.OPEN) return;
+    const currentToken = tokenRef.current;
+    if (!currentToken || wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(`${WS_BASE_URL}/?token=${token}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/?token=${currentToken}`);
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -57,7 +64,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     wsRef.current = ws;
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {

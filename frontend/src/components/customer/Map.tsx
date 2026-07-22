@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { GeoLocation } from '../../types';
-import { Navigation } from 'lucide-react';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
@@ -36,6 +35,14 @@ export const Map: React.FC<MapProps> = ({
   const markers = useRef<mapboxgl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
 
+  // Store callbacks in refs to avoid stale closures
+  const onMapClickRef = useRef(onMapClick);
+  const onPickupSetRef = useRef(onPickupSet);
+
+  useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
+  useEffect(() => { onPickupSetRef.current = onPickupSet; }, [onPickupSet]);
+
+  // Initialize map once
   useEffect(() => {
     if (!mapContainer.current) return;
 
@@ -51,14 +58,12 @@ export const Map: React.FC<MapProps> = ({
       setMapLoaded(true);
     });
 
-    if (onMapClick && interactive) {
-      map.current.on('click', (e) => {
-        onMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat });
-      });
-    }
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
+      onMapClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+    };
 
-    // Add geolocate control
     if (interactive) {
+      map.current.on('click', handleClick);
       map.current.addControl(
         new mapboxgl.GeolocateControl({
           positionOptions: { enableHighAccuracy: true },
@@ -72,53 +77,81 @@ export const Map: React.FC<MapProps> = ({
 
     return () => {
       markers.current.forEach(marker => marker.remove());
+      map.current?.off('click', handleClick);
       map.current?.remove();
+      map.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update markers
+  // Update markers when locations change
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
-    // Clear existing markers
     markers.current.forEach(marker => marker.remove());
     markers.current = [];
 
+    const createMarker = (loc: GeoLocation, color: string, label: string, size: number = 32) => {
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <div style="
+          background: ${color};
+          width: ${size}px;
+          height: ${size}px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        ">
+          <svg width="${size * 0.5}" height="${size * 0.5}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+        </div>
+      `;
+      return new mapboxgl.Marker({ element: el })
+        .setLngLat([loc.lng, loc.lat])
+        .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-semibold">${label}</p>`))
+        .addTo(map.current!);
+    };
+
     const newMarkers: mapboxgl.Marker[] = [];
 
-    if (pickup) {
-      const el = document.createElement('div');
-      el.innerHTML = `<div style="background: #F97316; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>`;
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([pickup.lng, pickup.lat])
-        .setPopup(new mapboxgl.Popup().setHTML('<p class="font-semibold">Pickup Location</p>'))
-        .addTo(map.current);
-      newMarkers.push(marker);
-    }
-
-    if (dropoff) {
-      const el = document.createElement('div');
-      el.innerHTML = `<div style="background: #EF4444; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>`;
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([dropoff.lng, dropoff.lat])
-        .setPopup(new mapboxgl.Popup().setHTML('<p class="font-semibold">Drop-off Location</p>'))
-        .addTo(map.current);
-      newMarkers.push(marker);
-    }
-
+    if (pickup) newMarkers.push(createMarker(pickup, '#F97316', 'Pickup Location'));
+    if (dropoff) newMarkers.push(createMarker(dropoff, '#EF4444', 'Drop-off Location'));
     if (riderLocation) {
       const el = document.createElement('div');
-      el.innerHTML = `<div style="background: #22C55E; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); animation: pulse 2s infinite;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>`;
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([riderLocation.lng, riderLocation.lat])
-        .setPopup(new mapboxgl.Popup().setHTML('<p class="font-semibold">Rider Location</p>'))
-        .addTo(map.current);
-      newMarkers.push(marker);
+      el.innerHTML = `
+        <div style="
+          background: #22C55E;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          animation: wave-pulse 2s infinite;
+        ">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+      `;
+      newMarkers.push(
+        new mapboxgl.Marker({ element: el })
+          .setLngLat([riderLocation.lng, riderLocation.lat])
+          .setPopup(new mapboxgl.Popup().setHTML('<p class="font-semibold">Rider Location</p>'))
+          .addTo(map.current!)
+      );
     }
 
     markers.current = newMarkers;
 
-    // Fit bounds to show all markers
     if (pickup && dropoff) {
       const bounds = new mapboxgl.LngLatBounds();
       bounds.extend([pickup.lng, pickup.lat]);
@@ -128,9 +161,20 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [pickup, dropoff, riderLocation, mapLoaded]);
 
-  // Draw route
+  // Draw/clear route
   useEffect(() => {
-    if (!map.current || !mapLoaded || !showRoute || !pickup || !dropoff) return;
+    if (!map.current || !mapLoaded) return;
+
+    // Clear route if showRoute is false or locations missing
+    if (!showRoute || !pickup || !dropoff) {
+      if (map.current.getLayer('route')) {
+        map.current.removeLayer('route');
+      }
+      if (map.current.getSource('route')) {
+        map.current.removeSource('route');
+      }
+      return;
+    }
 
     const drawRoute = async () => {
       try {
@@ -139,7 +183,7 @@ export const Map: React.FC<MapProps> = ({
         );
         const data = await response.json();
 
-        if (data.routes && data.routes[0]) {
+        if (data.routes?.[0]) {
           const route = data.routes[0].geometry;
 
           if (map.current!.getSource('route')) {
@@ -151,26 +195,14 @@ export const Map: React.FC<MapProps> = ({
           } else {
             map.current!.addSource('route', {
               type: 'geojson',
-              data: {
-                type: 'Feature',
-                properties: {},
-                geometry: route,
-              },
+              data: { type: 'Feature', properties: {}, geometry: route },
             });
-
             map.current!.addLayer({
               id: 'route',
               type: 'line',
               source: 'route',
-              layout: {
-                'line-join': 'round',
-                'line-cap': 'round',
-              },
-              paint: {
-                'line-color': '#F97316',
-                'line-width': 4,
-                'line-opacity': 0.8,
-              },
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: { 'line-color': '#F97316', 'line-width': 4, 'line-opacity': 0.8 },
             });
           }
         }
@@ -193,13 +225,21 @@ export const Map: React.FC<MapProps> = ({
       {onPickupSet && (
         <button
           onClick={() => {
-            navigator.geolocation.getCurrentPosition((pos) => {
-              onPickupSet({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            });
+            if (!navigator.geolocation) {
+              console.error('Geolocation not supported');
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => onPickupSetRef.current?.({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+              (err) => console.error('Geolocation error:', err.message),
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
           }}
           className="absolute bottom-20 right-4 bg-white dark:bg-dark-card p-3 rounded-xl shadow-lg hover:shadow-xl transition-shadow"
         >
-          <Navigation className="w-5 h-5 text-wave-500" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+          </svg>
         </button>
       )}
     </div>

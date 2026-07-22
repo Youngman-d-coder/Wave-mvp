@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Package, MapPin, Calendar, Repeat, Receipt } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -17,6 +18,8 @@ export const DeliveryHistory: React.FC<DeliveryHistoryProps> = ({
   onRebook,
   onViewReceipt,
 }) => {
+  const navigate = useNavigate();
+
   if (deliveries.length === 0) {
     return (
       <EmptyState
@@ -24,7 +27,7 @@ export const DeliveryHistory: React.FC<DeliveryHistoryProps> = ({
         title="No deliveries yet"
         description="Start booking your first delivery to see it here"
         actionLabel="Book a Delivery"
-        onAction={() => window.location.href = '/customer'}
+        onAction={() => navigate('/customer')}
       />
     );
   }
@@ -47,7 +50,7 @@ export const DeliveryHistory: React.FC<DeliveryHistoryProps> = ({
               </p>
             </div>
             <span className="font-bold text-wave-500">
-              {delivery.payment.currency} {delivery.fare.total.toFixed(2)}
+              {delivery.payment?.currency || '₦'} {delivery.fare?.total?.toFixed(2) || '0.00'}
             </span>
           </div>
 
@@ -55,12 +58,12 @@ export const DeliveryHistory: React.FC<DeliveryHistoryProps> = ({
             <div className="flex-1">
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-wave-500 flex-shrink-0" />
-                <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.pickup.address}</span>
+                <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.pickup?.address || 'Pickup location'}</span>
               </div>
               <div className="w-0.5 h-4 bg-gray-200 dark:bg-dark-border ml-2 my-1" />
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.dropoff.address}</span>
+                <span className="text-gray-700 dark:text-gray-300 truncate">{delivery.dropoff?.address || 'Drop-off location'}</span>
               </div>
             </div>
           </div>
