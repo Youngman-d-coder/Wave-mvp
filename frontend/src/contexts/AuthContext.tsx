@@ -3,9 +3,10 @@ import { AuthState, User, LoginCredentials, RegisterData } from '../types';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<User>;
-  register: (data: RegisterData) => Promise<void>;
+  register: (data: RegisterData) => Promise<any>;
   logout: () => void;
   verifyOTP: (phone: string, otp: string) => Promise<void>;
+  resendOTP: (phone: string) => Promise<any>;
   updateProfile: (data: Partial<User>) => Promise<void>;
   refreshAccessToken: () => Promise<void>;
 }
@@ -58,7 +59,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Login failed');
+      const err: any = new Error(error.message || 'Login failed');
+      err.data = error;
+      throw err;
     }
 
     const data = await response.json();
@@ -114,6 +117,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const resendOTP = useCallback(async (phone: string) => {
+    const response = await fetch(`${API_BASE_URL}/auth/resend-otp/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Could not resend OTP');
+    }
+
+    return data;
+  }, []);
+
   const updateProfile = useCallback(async (data: Partial<User>) => {
     const response = await fetch(`${API_BASE_URL}/auth/profile/`, {
       method: 'PATCH',
@@ -147,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [state.refreshToken, logout]);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, verifyOTP, updateProfile, refreshAccessToken }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, verifyOTP, resendOTP, updateProfile, refreshAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

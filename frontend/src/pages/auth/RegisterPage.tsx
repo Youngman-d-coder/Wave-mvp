@@ -33,9 +33,16 @@ export const RegisterPage: React.FC = () => {
     }
     setIsLoading(true);
     try {
-      await register(formData);
+      const result = await register(formData);
       localStorage.setItem('wave_verify_phone', formData.phone);
-      showSuccess('Account created! Please verify your phone.');
+      if (result?.debug_otp) {
+        // No SMS provider is configured yet, so the OTP is surfaced here
+        // directly instead of leaving the user stuck with no way to get it.
+        localStorage.setItem('wave_debug_otp', result.debug_otp);
+        showSuccess(`Account created! Your verification code is ${result.debug_otp}`);
+      } else {
+        showSuccess('Account created! Please verify your phone.');
+      }
       setStep(2);
     } catch (err: any) {
       showError(err.message || 'Registration failed');
@@ -152,6 +159,16 @@ export const RegisterPage: React.FC = () => {
               <p className="text-gray-500 dark:text-gray-400 mb-6">
                 We've sent an OTP to {formData.phone}. Please verify to continue.
               </p>
+              {localStorage.getItem('wave_debug_otp') && (
+                <div className="mb-6 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Testing mode &mdash; SMS isn't wired up yet, so here's your code:
+                  </p>
+                  <p className="text-2xl font-bold tracking-widest text-amber-800 dark:text-amber-300">
+                    {localStorage.getItem('wave_debug_otp')}
+                  </p>
+                </div>
+              )}
               <Link to="/verify-otp">
                 <Button fullWidth>Verify Phone</Button>
               </Link>

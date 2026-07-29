@@ -12,6 +12,9 @@ export interface User {
   is_verified: boolean;
   created_at: string;
   updated_at: string;
+  favorite_riders?: Rider[];
+  total_deliveries?: number;
+  total_spent?: number;
 }
 
 export interface Customer extends User {
@@ -31,6 +34,8 @@ export interface Rider extends User {
   rating: number;
   total_reviews: number;
   verification_status: VerificationStatus;
+  status: 'online' | 'offline' | 'busy';
+  bank_accounts: BankAccount[];
 }
 
 export interface Admin extends User {
@@ -260,6 +265,14 @@ export interface DashboardStats {
   active_riders: number;
   active_customers: number;
   live_deliveries: number;
+  total_payouts?: number;
+  pending_withdrawals?: number;
+  revenue_trend?: number;
+  today_trend?: number;
+  riders_trend?: number;
+  deliveries_trend?: number;
+  recent_activity?: { type: string; description: string; time: string }[];
+  top_riders?: { id: string; name: string; avatar?: string; deliveries: number; earnings: number; rating: number }[];
 }
 
 export interface FleetAnalytics {

@@ -3,7 +3,6 @@ import { ArrowDownLeft, ArrowUpRight, DollarSign, TrendingUp, TrendingDown } fro
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Tabs } from '../../components/ui/Tabs';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { useAdmin } from '../../hooks/useAdmin';
 
 export const AdminFinance: React.FC = () => {
@@ -29,35 +28,26 @@ export const AdminFinance: React.FC = () => {
     { value: 'year', label: 'This Year' },
   ];
 
-  const filteredTransactions = transactions.filter((tx: any) => {
-    if (activeTab === 'payments') return tx.type === 'payment';
-    if (activeTab === 'payouts') return tx.type === 'payout';
-    if (activeTab === 'commissions') return tx.type === 'commission';
-    return true;
-  });
-
-  const [activeTab, setActiveTab] = useState('all');
-
   const tabs = [
     {
       id: 'all',
       label: 'All',
-      content: <TransactionList transactions={filteredTransactions} isLoading={isLoading} />,
+      content: <TransactionList transactions={transactions} isLoading={isLoading} />,
     },
     {
       id: 'payments',
       label: 'Payments',
-      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'payment')} isLoading={isLoading} />,
+      content: <TransactionList transactions={transactions.filter((t: any) => t.type === 'payment')} isLoading={isLoading} />,
     },
     {
       id: 'payouts',
       label: 'Payouts',
-      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'payout')} isLoading={isLoading} />,
+      content: <TransactionList transactions={transactions.filter((t: any) => t.type === 'payout')} isLoading={isLoading} />,
     },
     {
       id: 'commissions',
       label: 'Commissions',
-      content: <TransactionList transactions={filteredTransactions.filter((t: any) => t.type === 'commission')} isLoading={isLoading} />,
+      content: <TransactionList transactions={transactions.filter((t: any) => t.type === 'commission')} isLoading={isLoading} />,
     },
   ];
 
@@ -112,7 +102,7 @@ export const AdminFinance: React.FC = () => {
             <Badge variant="info">Payouts</Badge>
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            ₦{(stats.total_payouts / 1000000).toFixed(1)}M
+            ₦{((stats.total_payouts || 0) / 1000000).toFixed(1)}M
           </p>
           <p className="text-sm text-gray-500">Rider Payouts</p>
         </Card>
@@ -122,7 +112,7 @@ export const AdminFinance: React.FC = () => {
             <Badge variant="warning">Pending</Badge>
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            ₦{(stats.pending_withdrawals / 1000).toFixed(0)}K
+            ₦{((stats.pending_withdrawals || 0) / 1000).toFixed(0)}K
           </p>
           <p className="text-sm text-gray-500">Pending Withdrawals</p>
         </Card>

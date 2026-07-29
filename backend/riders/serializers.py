@@ -24,13 +24,16 @@ class RiderProfileSerializer(serializers.ModelSerializer):
     stats = serializers.SerializerMethodField()
     level = serializers.SerializerMethodField()
     current_location = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    bank_accounts = BankAccountSerializer(many=True, read_only=True)
 
     class Meta:
         model = RiderProfile
         fields = (
             'id', 'email', 'phone', 'full_name', 'avatar', 'is_verified',
             'vehicle', 'documents', 'wallet', 'stats', 'level',
-            'is_online', 'current_location', 'rating', 'total_reviews', 'verification_status'
+            'is_online', 'current_location', 'rating', 'total_reviews',
+            'verification_status', 'status', 'bank_accounts'
         )
 
     def get_avatar(self, obj):
@@ -114,3 +117,11 @@ class RiderProfileSerializer(serializers.ModelSerializer):
                 'lng': obj.longitude
             }
         return None
+
+    def get_status(self, obj):
+        if not obj.is_online:
+            return 'offline'
+        from deliveries.models import Delivery
+        active_statuses = ['rider_assigned', 'rider_arrived', 'picked_up', 'in_transit', 'near_destination']
+        has_active_delivery = Delivery.objects.filter(rider=obj, status__in=active_statuses).exists()
+        return 'busy' if has_active_delivery else 'online'

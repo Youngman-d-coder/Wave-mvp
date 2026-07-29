@@ -24,6 +24,8 @@ const mockRiders: Rider[] = [
     rating: 4.8,
     total_reviews: 120,
     verification_status: 'verified',
+    status: 'online',
+    bank_accounts: [],
   },
   {
     id: '2',
@@ -44,6 +46,8 @@ const mockRiders: Rider[] = [
     rating: 4.9,
     total_reviews: 80,
     verification_status: 'verified',
+    status: 'offline',
+    bank_accounts: [],
   },
 ];
 

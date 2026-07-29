@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wallet, ArrowUpRight, ArrowDownLeft, Clock, Banknote, Plus } from 'lucide-react';
+import { Wallet, ArrowUpRight, Clock, Banknote, Plus } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -82,6 +82,7 @@ export const RiderWallet: React.FC = () => {
       bank_name: bankForm.bank_name,
       account_number: bankForm.account_number,
       account_name: bankForm.account_name,
+      is_default: bankAccounts.length === 0,
     });
     setIsProcessing(false);
 
@@ -197,12 +198,11 @@ export const RiderWallet: React.FC = () => {
             {transactions.map((tx) => (
               <div key={tx.id} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-dark-border last:border-0">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    tx.type === 'earning' 
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-500' 
-                      : 'bg-red-100 dark:bg-red-900/30 text-red-500'
-                  }`}>
-                    {tx.type === 'earning' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+                  {/* This list is withdrawals-only for now (see comment above),
+                      so it's always styled as an outgoing transaction until a
+                      unified transactions endpoint also surfaces earnings here. */}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-100 dark:bg-red-900/30 text-red-500">
+                    <ArrowUpRight className="w-5 h-5" />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900 dark:text-white">{tx.description}</p>
@@ -210,8 +210,8 @@ export const RiderWallet: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className={`font-bold ${tx.type === 'earning' ? 'text-green-500' : 'text-red-500'}`}>
-                    {tx.type === 'earning' ? '+' : '-'}₦{tx.amount.toLocaleString()}
+                  <p className="font-bold text-red-500">
+                    -₦{tx.amount.toLocaleString()}
                   </p>
                   <Badge variant={tx.status === 'completed' ? 'success' : tx.status === 'pending' ? 'warning' : 'error'} size="sm">
                     {tx.status}

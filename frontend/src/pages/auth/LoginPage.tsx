@@ -34,7 +34,18 @@ export const LoginPage: React.FC = () => {
           break;
       }
     } catch (err: any) {
-      showError(err.message || 'Login failed');
+      if (err.data?.phone) {
+        // Account exists but isn't verified yet — route straight to OTP
+        // verification instead of leaving the user stuck on an error toast.
+        localStorage.setItem('wave_verify_phone', err.data.phone);
+        if (err.data.debug_otp) {
+          localStorage.setItem('wave_debug_otp', err.data.debug_otp);
+        }
+        showError('Please verify your phone number to continue.');
+        navigate('/verify-otp');
+      } else {
+        showError(err.message || 'Login failed');
+      }
     } finally {
       setIsLoading(false);
     }

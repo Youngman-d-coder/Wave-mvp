@@ -13,7 +13,6 @@ export const CustomerDeliveries: React.FC = () => {
   const { deliveryHistory, getHistory } = useDelivery();
   const { showError } = useToast();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('active');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -33,12 +32,14 @@ export const CustomerDeliveries: React.FC = () => {
   const completedStatuses = ['delivered'];
   const cancelledStatuses = ['cancelled', 'failed'];
 
-  const filteredDeliveries = deliveryHistory.filter((d: Delivery) => {
-    if (activeTab === 'active') return activeStatuses.includes(d.status);
-    if (activeTab === 'completed') return completedStatuses.includes(d.status);
-    if (activeTab === 'cancelled') return cancelledStatuses.includes(d.status);
-    return true;
-  });
+  // Each tab's content needs its own independently-filtered list — the Tabs
+  // component manages tab switching internally with no onChange callback,
+  // so a single shared "activeTab" state here never reflects which tab is
+  // actually showing and would leave every tab displaying the same data.
+  const activeDeliveries = deliveryHistory.filter((d: Delivery) => activeStatuses.includes(d.status));
+  const historyDeliveries = deliveryHistory.filter((d: Delivery) =>
+    completedStatuses.includes(d.status) || cancelledStatuses.includes(d.status)
+  );
 
   const handleDeliveryClick = (id: string) => {
     navigate(`/customer/tracking/${id}`);
@@ -56,7 +57,7 @@ export const CustomerDeliveries: React.FC = () => {
                 <div key={i} className="h-32 bg-gray-100 dark:bg-dark-border animate-pulse rounded-xl" />
               ))}
             </div>
-          ) : filteredDeliveries.length === 0 ? (
+          ) : activeDeliveries.length === 0 ? (
             <EmptyState
               icon={<Package className="w-16 h-16 text-gray-300 dark:text-gray-600" />}
               title="No active deliveries"
@@ -65,7 +66,7 @@ export const CustomerDeliveries: React.FC = () => {
               onAction={() => navigate('/customer')}
             />
           ) : (
-            filteredDeliveries.map((delivery) => (
+            activeDeliveries.map((delivery) => (
               <DeliveryCard 
                 key={delivery.id} 
                 delivery={delivery} 
@@ -87,14 +88,14 @@ export const CustomerDeliveries: React.FC = () => {
                 <div key={i} className="h-32 bg-gray-100 dark:bg-dark-border animate-pulse rounded-xl" />
               ))}
             </div>
-          ) : filteredDeliveries.length === 0 ? (
+          ) : historyDeliveries.length === 0 ? (
             <EmptyState
               icon={<Package className="w-16 h-16 text-gray-300 dark:text-gray-600" />}
               title="No delivery history"
               description="Your completed deliveries will appear here"
             />
           ) : (
-            filteredDeliveries.map((delivery) => (
+            historyDeliveries.map((delivery) => (
               <DeliveryCard 
                 key={delivery.id} 
                 delivery={delivery} 

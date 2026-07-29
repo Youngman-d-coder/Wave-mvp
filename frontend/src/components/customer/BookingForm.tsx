@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { MapPin, User, Phone, Weight, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
 import { Stepper } from '../../components/ui/Stepper';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { GeoLocation, PackageType } from '../../types';
 
 interface BookingFormProps {
@@ -86,7 +85,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
   // Format package type for display
   const formatPackageType = (type: string) => {
-    return type.replaceAll('_', ' ').replace(/\w/g, l => l.toUpperCase());
+    return type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
   };
 
   return (

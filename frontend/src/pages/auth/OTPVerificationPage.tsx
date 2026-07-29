@@ -8,9 +8,13 @@ import { useToast } from '../../contexts/ToastContext';
 export const OTPVerificationPage: React.FC = () => {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
-  const { verifyOTP } = useAuth();
-  const { showSuccess, showError } = useToast();
+  const [isResending, setIsResending] = useState(false);
+  const { verifyOTP, resendOTP } = useAuth();
+  const { showSuccess, showError, showToast } = useToast();
   const navigate = useNavigate();
+
+  const phone = localStorage.getItem('wave_verify_phone');
+  const debugOtp = localStorage.getItem('wave_debug_otp');
 
   const handleChange = (index: number, value: string) => {
     if (value.length > 1) return;
@@ -25,16 +29,43 @@ export const OTPVerificationPage: React.FC = () => {
   const handleSubmit = async () => {
     const code = otp.join('');
     if (code.length !== 6) return;
+    if (!phone) {
+      showError('No phone number found. Please register again.');
+      navigate('/register');
+      return;
+    }
     setIsLoading(true);
-    const phone = localStorage.getItem('wave_verify_phone') || '+2348012345678';
     try {
       await verifyOTP(phone, code);
+      localStorage.removeItem('wave_debug_otp');
       showSuccess('Phone verified!');
       navigate('/login');
     } catch {
       showError('Invalid OTP');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!phone) {
+      showError('No phone number found. Please register again.');
+      navigate('/register');
+      return;
+    }
+    setIsResending(true);
+    try {
+      const result = await resendOTP(phone);
+      if (result?.debug_otp) {
+        localStorage.setItem('wave_debug_otp', result.debug_otp);
+        showToast('info', `New code: ${result.debug_otp}`, 15000);
+      } else {
+        showSuccess('A new OTP has been sent');
+      }
+    } catch (err: any) {
+      showError(err.message || 'Could not resend OTP');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -54,6 +85,17 @@ export const OTPVerificationPage: React.FC = () => {
         </div>
 
         <Card className="p-8">
+          {debugOtp && (
+            <div className="mb-6 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Testing mode &mdash; SMS isn't wired up yet, so here's your code:
+              </p>
+              <p className="text-2xl font-bold tracking-widest text-amber-800 dark:text-amber-300">
+                {debugOtp}
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-center gap-2 mb-6">
             {otp.map((digit, index) => (
               <input
@@ -74,8 +116,12 @@ export const OTPVerificationPage: React.FC = () => {
 
           <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
             Didn't receive code?{' '}
-            <button className="text-wave-500 hover:text-wave-600 font-medium">
-              Resend
+            <button
+              onClick={handleResend}
+              disabled={isResending}
+              className="text-wave-500 hover:text-wave-600 font-medium disabled:opacity-50"
+            >
+              {isResending ? 'Sending...' : 'Resend'}
             </button>
           </p>
         </Card>

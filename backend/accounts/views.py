@@ -55,8 +55,15 @@ class RegisterView(views.APIView):
             # Send OTP
             if user.phone:
                 send_otp(user.phone, otp_code)
-                
-            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+            response_data = UserSerializer(user).data
+            # Twilio isn't wired up yet, so surface the code directly in the
+            # response while EXPOSE_OTP_FOR_TESTING (or DEBUG) is on, so the
+            # frontend can display it instead of leaving the user stuck.
+            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
+                response_data['debug_otp'] = otp_code
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(views.APIView):
@@ -87,7 +94,15 @@ class LoginView(views.APIView):
             )
             if user.phone:
                 send_otp(user.phone, otp_code)
-            return Response({'message': 'Phone number not verified. A new OTP has been sent.'}, status=status.HTTP_403_FORBIDDEN)
+
+            response_data = {
+                'message': 'Phone number not verified. A new OTP has been sent.',
+                'phone': user.phone,
+            }
+            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
+                response_data['debug_otp'] = otp_code
+
+            return Response(response_data, status=status.HTTP_403_FORBIDDEN)
             
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -134,29 +149,36 @@ class VerifyOTPView(views.APIView):
 
 class ResendOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
-    
+
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            
-            # Generate OTP
-            otp_code = f"{random.randint(100000, 999999)}"
-            OTPVerification.objects.update_or_create(
-                phone=user.phone,
-                defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
-            )
-        
-            # Send OTP
-            if user.phone:
-                send_otp(user.phone, otp_code)
-        
-            response_data = UserSerializer(user).data
-            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
-                response_data['debug_otp'] = otp_code
-            
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = OTPSendSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        phone = serializer.validated_data['phone']
+
+        try:
+            user = User.objects.get(phone=phone)
+        except User.DoesNotExist:
+            return Response({'message': 'No account found for this phone number'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.is_verified:
+            return Response({'message': 'This account is already verified'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate a fresh OTP for the existing account (do NOT re-register)
+        otp_code = f"{random.randint(100000, 999999)}"
+        OTPVerification.objects.update_or_create(
+            phone=phone,
+            defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
+        )
+
+        send_otp(phone, otp_code)
+
+        response_data = {'message': 'A new OTP has been sent'}
+        if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
+            response_data['debug_otp'] = otp_code
+
+        return Response(response_data, status=status.HTTP_200_OK)
     
 class MeView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
