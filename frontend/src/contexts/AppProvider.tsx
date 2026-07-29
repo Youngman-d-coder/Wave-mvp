@@ -9,13 +9,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ToastProvider>
-          <NotificationProvider>
-            <WebSocketProvider>
+        <WebSocketProvider>
+          <ToastProvider>
+            <NotificationProvider>
               {children}
-            </WebSocketProvider>
-          </NotificationProvider>
-        </ToastProvider>
+            </NotificationProvider>
+          </ToastProvider>
+        </WebSocketProvider>
       </AuthProvider>
     </ThemeProvider>
   );
