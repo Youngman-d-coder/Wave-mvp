@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Lock, Shield, Package, Heart, DollarSign, Calendar } from 'lucide-react';
+import { Camera, Lock, Shield, Package, CheckCircle, DollarSign, Calendar } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
@@ -23,7 +23,7 @@ export const CustomerProfile: React.FC = () => {
   });
 
   useEffect(() => {
-    getHistory();
+    void getHistory(1, 100);
   }, [getHistory]);
 
   // Sync form data when user loads
@@ -39,8 +39,8 @@ export const CustomerProfile: React.FC = () => {
 
   // Calculate real stats from delivery history
   const totalDeliveries = deliveryHistory.length;
-  const totalSpent = deliveryHistory.reduce((sum, d) => sum + (d.fare?.total || 0), 0);
-  const favoriteCount = user?.favorite_riders?.length || 0;
+  const completedDeliveries = deliveryHistory.filter(d => d.status === 'delivered');
+  const totalSpent = completedDeliveries.reduce((sum, d) => sum + (d.fare?.total || 0), 0);
   const memberSince = user?.created_at 
     ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
@@ -48,11 +48,11 @@ export const CustomerProfile: React.FC = () => {
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      await updateProfile(formData);
+      await updateProfile({ full_name: formData.full_name });
       showSuccess('Profile updated successfully');
       setIsEditing(false);
-    } catch (err: any) {
-      showError(err.message || 'Failed to update profile');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
       setIsLoading(false);
     }
@@ -118,9 +118,9 @@ export const CustomerProfile: React.FC = () => {
           <p className="text-xs text-gray-500">Total Spent</p>
         </Card>
         <Card className="p-4 text-center">
-          <Heart className="w-5 h-5 text-red-500 mx-auto mb-2" />
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{favoriteCount}</p>
-          <p className="text-xs text-gray-500">Favorites</p>
+          <CheckCircle className="w-5 h-5 text-green-500 mx-auto mb-2" />
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">{completedDeliveries.length}</p>
+          <p className="text-xs text-gray-500">Completed</p>
         </Card>
         <Card className="p-4 text-center">
           <Calendar className="w-5 h-5 text-blue-500 mx-auto mb-2" />
@@ -162,15 +162,15 @@ export const CustomerProfile: React.FC = () => {
             label="Email"
             type="email"
             value={formData.email}
-            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-            disabled={!isEditing}
+            disabled
+            helperText="Email changes require account re-verification and are disabled in this MVP."
           />
           <Input
             label="Phone"
             type="tel"
             value={formData.phone}
-            onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-            disabled={!isEditing}
+            disabled
+            helperText="Phone changes require OTP re-verification and are disabled in this MVP."
           />
         </div>
       </Card>

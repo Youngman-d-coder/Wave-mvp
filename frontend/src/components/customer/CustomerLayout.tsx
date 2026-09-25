@@ -18,7 +18,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../contexts/ToastContext';
-import { useNotifications } from '../../contexts/NotificationContext';
+import { Notification, useNotifications } from '../../contexts/NotificationContext';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 
@@ -45,12 +45,13 @@ export const CustomerLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const handleNotificationClick = (notification: any) => {
+  const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
     setShowNotifications(false);
     // Navigate based on notification type
-    if (notification.type === 'delivery' && notification.data?.delivery_id) {
-      navigate(`/customer/tracking/${notification.data.delivery_id}`);
+    const deliveryId = notification.data?.delivery_id;
+    if (notification.type === 'delivery' && typeof deliveryId === 'string') {
+      navigate(`/customer/tracking/${deliveryId}`);
     }
   };
 

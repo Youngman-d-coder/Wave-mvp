@@ -17,7 +17,7 @@ export const OTPVerificationPage: React.FC = () => {
   const debugOtp = localStorage.getItem('wave_debug_otp');
 
   const handleChange = (index: number, value: string) => {
-    if (value.length > 1) return;
+    if (value.length > 1 || (value && !/^\d$/.test(value))) return;
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
@@ -38,6 +38,7 @@ export const OTPVerificationPage: React.FC = () => {
     try {
       await verifyOTP(phone, code);
       localStorage.removeItem('wave_debug_otp');
+      localStorage.removeItem('wave_verify_phone');
       showSuccess('Phone verified!');
       navigate('/login');
     } catch {
@@ -56,14 +57,15 @@ export const OTPVerificationPage: React.FC = () => {
     setIsResending(true);
     try {
       const result = await resendOTP(phone);
-      if (result?.debug_otp) {
-        localStorage.setItem('wave_debug_otp', result.debug_otp);
-        showToast('info', `New code: ${result.debug_otp}`, 15000);
+      const newCode = typeof result.debug_otp === 'string' ? result.debug_otp : null;
+      if (newCode) {
+        localStorage.setItem('wave_debug_otp', newCode);
+        showToast('info', `New code: ${newCode}`, 15000);
       } else {
         showSuccess('A new OTP has been sent');
       }
-    } catch (err: any) {
-      showError(err.message || 'Could not resend OTP');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Could not resend OTP');
     } finally {
       setIsResending(false);
     }
@@ -102,6 +104,8 @@ export const OTPVerificationPage: React.FC = () => {
                 key={index}
                 id={`otp-${index}`}
                 type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 maxLength={1}
                 value={digit}
                 onChange={(e) => handleChange(index, e.target.value)}

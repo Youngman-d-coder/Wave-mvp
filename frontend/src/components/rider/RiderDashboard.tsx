@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Package, MapPin, DollarSign, TrendingUp, Star, CheckCircle, XCircle } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -8,34 +8,53 @@ import { SkeletonCard } from '../../components/ui/Skeleton';
 import { useRider } from '../../hooks/useRider';
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useToast } from '../../contexts/ToastContext';
+import type { DeliveryRequest, RiderLevel } from '../../types';
 
-interface DeliveryRequest {
-  id: string;
-  pickup: string;
-  dropoff: string;
-  distance: string;
-  estimated_fare: number;
-  package_type: string;
+const LEVELS: Record<RiderLevel, { start: number; next: number | null; nextLabel: string }> = {
+  bronze: { start: 0, next: 15, nextLabel: 'Silver' },
+  silver: { start: 15, next: 50, nextLabel: 'Gold' },
+  gold: { start: 50, next: 100, nextLabel: 'Platinum' },
+  platinum: { start: 100, next: 200, nextLabel: 'Elite' },
+  elite: { start: 200, next: null, nextLabel: 'Max' },
+};
+
+function isDeliveryRequest(value: unknown): value is DeliveryRequest {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<DeliveryRequest>;
+  return typeof item.id === 'string' && typeof item.pickup === 'string' && typeof item.dropoff === 'string' && typeof item.estimated_fare === 'number';
 }
 
 export const RiderDashboard: React.FC = () => {
-  const { riderProfile, earnings, getProfile, getEarnings, acceptDelivery, rejectDelivery } = useRider();
+  const { riderProfile, earnings, getProfile, getEarnings, getAvailableDeliveries, acceptDelivery, rejectDelivery } = useRider();
   const { subscribe } = useWebSocket();
   const { showSuccess, showError } = useToast();
-  const [deliveryRequest, setDeliveryRequest] = useState<DeliveryRequest | null>(null);
+  const [requests, setRequests] = useState<DeliveryRequest[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    getProfile();
-    getEarnings();
-  }, [getProfile, getEarnings]);
+  useEffect(() => { void getProfile(); void getEarnings(); }, [getProfile, getEarnings]);
 
   useEffect(() => {
-    const unsub = subscribe('delivery_request', (data) => {
-      setDeliveryRequest(data);
+    if (!riderProfile?.is_online || riderProfile.verification_status !== 'verified') {
+      setRequests([]);
+      return;
+    }
+    void getAvailableDeliveries().then(setRequests);
+  }, [getAvailableDeliveries, riderProfile?.is_online, riderProfile?.verification_status]);
+
+  useEffect(() => {
+    const unsubRequest = subscribe('delivery_request', data => {
+      if (!isDeliveryRequest(data)) return;
+      setRequests(prev => prev.some(item => item.id === data.id) ? prev : [...prev, data]);
     });
-    return unsub;
+    const unsubClosed = subscribe('delivery_request_closed', data => {
+      if (!data || typeof data !== 'object') return;
+      const id = (data as { delivery_id?: unknown }).delivery_id;
+      if (typeof id === 'string') setRequests(prev => prev.filter(item => item.id !== id));
+    });
+    return () => { unsubRequest(); unsubClosed(); };
   }, [subscribe]);
+
+  const deliveryRequest = requests[0] ?? null;
 
   const handleAccept = async () => {
     if (!deliveryRequest) return;
@@ -43,11 +62,9 @@ export const RiderDashboard: React.FC = () => {
     const result = await acceptDelivery(deliveryRequest.id);
     setIsProcessing(false);
     if (result.success) {
-      showSuccess('Delivery accepted!');
-      setDeliveryRequest(null);
-    } else {
-      showError(result.message || 'Failed to accept delivery');
-    }
+      showSuccess('Delivery accepted.');
+      setRequests(prev => prev.filter(item => item.id !== deliveryRequest.id));
+    } else showError(result.message || 'Failed to accept delivery');
   };
 
   const handleDecline = async () => {
@@ -55,150 +72,43 @@ export const RiderDashboard: React.FC = () => {
     setIsProcessing(true);
     const result = await rejectDelivery(deliveryRequest.id, 'Rider declined');
     setIsProcessing(false);
-    if (result.success) {
-      showSuccess('Delivery declined');
-      setDeliveryRequest(null);
-    } else {
-      showError(result.message || 'Failed to decline delivery');
-    }
+    if (result.success) setRequests(prev => prev.filter(item => item.id !== deliveryRequest.id));
+    else showError(result.message || 'Failed to decline delivery');
   };
 
-  if (!riderProfile) {
-    return (
-      <div className="space-y-6">
-        <SkeletonCard />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}
-        </div>
-      </div>
-    );
-  }
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  }, []);
 
+  if (!riderProfile) return <div className="space-y-6"><SkeletonCard /><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}</div></div>;
+
+  const successful = riderProfile.stats?.successful_rides || 0;
+  const level = LEVELS[riderProfile.level];
+  const progressPercent = level.next === null ? 100 : Math.max(0, Math.min(100, ((successful - level.start) / (level.next - level.start)) * 100));
+  const deliveriesToNext = level.next === null ? 0 : Math.max(0, level.next - successful);
   const stats = [
-    { label: "Today's Earnings", value: `₦${earnings.today.toLocaleString()}`, icon: DollarSign, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30' },
-    { label: 'This Week', value: `₦${earnings.week.toLocaleString()}`, icon: TrendingUp, color: 'text-wave-500', bg: 'bg-wave-100 dark:bg-wave-900/30' },
-    { label: 'Rating', value: riderProfile.rating?.toFixed(1) || '0.0', icon: Star, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30' },
-    { label: 'Deliveries', value: riderProfile.stats?.successful_rides?.toString() || '0', icon: Package, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+    { label: "Today's Earnings", value: `₦${earnings.today.toLocaleString()}`, icon: DollarSign },
+    { label: 'This Week', value: `₦${earnings.week.toLocaleString()}`, icon: TrendingUp },
+    { label: 'Rating', value: riderProfile.rating.toFixed(1), icon: Star },
+    { label: 'Deliveries', value: successful.toString(), icon: Package },
   ];
-
-  const levelProgress = riderProfile.level === 'bronze' ? { current: 0, next: 50, label: 'Bronze', nextLabel: 'Silver' }
-    : riderProfile.level === 'silver' ? { current: 50, next: 100, label: 'Silver', nextLabel: 'Gold' }
-    : riderProfile.level === 'gold' ? { current: 100, next: 200, label: 'Gold', nextLabel: 'Platinum' }
-    : riderProfile.level === 'platinum' ? { current: 200, next: 350, label: 'Platinum', nextLabel: 'Elite' }
-    : { current: 350, next: 350, label: 'Elite', nextLabel: 'Max' };
-
-  const deliveriesToNext = Math.max(0, levelProgress.next - (riderProfile.stats?.successful_rides || 0));
-  const progressPercent = Math.min(100, ((riderProfile.stats?.successful_rides || 0) - levelProgress.current) / (levelProgress.next - levelProgress.current) * 100);
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
-      <div>
-        <h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white">
-          Good afternoon, {riderProfile.full_name}
-        </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          Ready to make some deliveries today?
-        </p>
-      </div>
+      <div><h1 className="text-2xl font-heading font-bold text-gray-900 dark:text-white">{greeting}, {riderProfile.full_name}</h1><p className="text-gray-500 dark:text-gray-400 mt-1">{riderProfile.verification_status === 'verified' ? 'Your live delivery workspace is ready.' : `Verification status: ${riderProfile.verification_status.replace('_', ' ')}`}</p></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{stats.map(stat => <Card key={stat.label} className="p-4"><stat.icon className="w-5 h-5 text-wave-500 mb-3"/><p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p><p className="text-sm text-gray-500">{stat.label}</p></Card>)}</div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="p-4">
-            <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center mb-3`}>
-              <stat.icon className={`w-5 h-5 ${stat.color}`} />
-            </div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-          </Card>
-        ))}
-      </div>
-
-      {/* Delivery Request */}
       {deliveryRequest && (
-        <Card className="p-6 border-2 border-wave-500 animate-bounce-in">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <Badge variant="wave">New Request</Badge>
-              <h3 className="text-lg font-heading font-bold text-gray-900 dark:text-white mt-2">
-                Delivery Request #{deliveryRequest.id}
-              </h3>
-            </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-wave-500">₦{deliveryRequest.estimated_fare.toLocaleString()}</p>
-              <p className="text-sm text-gray-500">{deliveryRequest.distance}</p>
-            </div>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-wave-100 dark:bg-wave-900/30 flex items-center justify-center">
-                <MapPin className="w-4 h-4 text-wave-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Pickup</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{deliveryRequest.pickup}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <MapPin className="w-4 h-4 text-red-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Drop-off</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{deliveryRequest.dropoff}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <Button 
-              variant="secondary" 
-              className="flex-1" 
-              onClick={handleDecline}
-              isLoading={isProcessing}
-            >
-              <XCircle className="w-4 h-4 mr-2" />
-              Decline
-            </Button>
-            <Button 
-              className="flex-1" 
-              onClick={handleAccept}
-              isLoading={isProcessing}
-            >
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Accept Delivery
-            </Button>
-          </div>
+        <Card className="p-6 border-2 border-wave-500">
+          <div className="flex items-start justify-between mb-4"><div><Badge variant="wave">New Request</Badge><h3 className="text-lg font-heading font-bold mt-2">Delivery Request</h3><p className="text-sm text-gray-500">{deliveryRequest.package_type}</p></div><div className="text-right"><p className="text-2xl font-bold text-wave-500">₦{(deliveryRequest.estimated_fare * 0.9).toLocaleString()}</p><p className="text-xs text-gray-500">Estimated rider payout · {deliveryRequest.distance}</p></div></div>
+          <div className="space-y-3 mb-6"><div className="flex gap-3"><MapPin className="w-4 h-4 text-wave-500 mt-1"/><div><p className="text-xs text-gray-500">Pickup</p><p className="text-sm font-medium">{deliveryRequest.pickup}</p></div></div><div className="flex gap-3"><MapPin className="w-4 h-4 text-red-500 mt-1"/><div><p className="text-xs text-gray-500">Drop-off</p><p className="text-sm font-medium">{deliveryRequest.dropoff}</p></div></div></div>
+          <div className="flex gap-3"><Button variant="secondary" className="flex-1" onClick={handleDecline} isLoading={isProcessing}><XCircle className="w-4 h-4 mr-2"/>Decline</Button><Button className="flex-1" onClick={handleAccept} isLoading={isProcessing}><CheckCircle className="w-4 h-4 mr-2"/>Accept</Button></div>
+          {requests.length > 1 && <p className="text-xs text-gray-500 text-center mt-3">{requests.length - 1} more request{requests.length === 2 ? '' : 's'} waiting</p>}
         </Card>
       )}
 
-      {/* Level Progress */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-heading font-bold text-gray-900 dark:text-white capitalize">
-              {levelProgress.label} Rider
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {deliveriesToNext > 0 
-                ? `${deliveriesToNext} more deliveries to reach ${levelProgress.nextLabel}`
-                : 'You have reached the maximum level!'
-              }
-            </p>
-          </div>
-          <Badge variant="wave">{riderProfile.level}</Badge>
-        </div>
-        <ProgressBar progress={progressPercent} max={100} size="lg" variant="wave" showLabel />
-        <div className="flex justify-between mt-2 text-xs text-gray-500">
-          <span className={riderProfile.level === 'bronze' ? 'text-wave-500 font-medium' : ''}>Bronze</span>
-          <span className={riderProfile.level === 'silver' ? 'text-wave-500 font-medium' : ''}>Silver</span>
-          <span className={riderProfile.level === 'gold' ? 'text-wave-500 font-medium' : ''}>Gold</span>
-          <span className={riderProfile.level === 'platinum' ? 'text-wave-500 font-medium' : ''}>Platinum</span>
-          <span className={riderProfile.level === 'elite' ? 'text-wave-500 font-medium' : ''}>Elite</span>
-        </div>
-      </Card>
+      <Card className="p-6"><div className="flex items-center justify-between mb-4"><div><h3 className="font-heading font-bold capitalize">{riderProfile.level} Rider</h3><p className="text-sm text-gray-500">{level.next === null ? 'Maximum rider level reached.' : `${deliveriesToNext} more completed deliveries to reach ${level.nextLabel}.`}</p></div><Badge variant="wave">{riderProfile.level}</Badge></div><ProgressBar progress={progressPercent} max={100} size="lg" variant="wave" showLabel /></Card>
     </div>
   );
 };

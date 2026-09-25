@@ -35,17 +35,17 @@ export const RegisterPage: React.FC = () => {
     try {
       const result = await register(formData);
       localStorage.setItem('wave_verify_phone', formData.phone);
-      if (result?.debug_otp) {
-        // No SMS provider is configured yet, so the OTP is surfaced here
-        // directly instead of leaving the user stuck with no way to get it.
-        localStorage.setItem('wave_debug_otp', result.debug_otp);
-        showSuccess(`Account created! Your verification code is ${result.debug_otp}`);
+      const debugOtp = typeof result.debug_otp === 'string' ? result.debug_otp : null;
+      if (debugOtp) {
+        localStorage.setItem('wave_debug_otp', debugOtp);
+        showSuccess(`Account created. Testing verification code: ${debugOtp}`);
       } else {
+        localStorage.removeItem('wave_debug_otp');
         showSuccess('Account created! Please verify your phone.');
       }
       setStep(2);
-    } catch (err: any) {
-      showError(err.message || 'Registration failed');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setIsLoading(false);
     }

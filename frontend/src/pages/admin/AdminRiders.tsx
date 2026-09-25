@@ -15,7 +15,7 @@ export const AdminRiders: React.FC = () => {
   const { showSuccess, showError } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline' | 'busy'>('all');
-  const [verificationFilter, setVerificationFilter] = useState<'all' | 'verified' | 'pending' | 'rejected'>('all');
+  const [verificationFilter, setVerificationFilter] = useState<'all' | 'verified' | 'pending' | 'under_review' | 'rejected'>('all');
   const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
 
   useEffect(() => {
@@ -31,18 +31,18 @@ export const AdminRiders: React.FC = () => {
     return matchesSearch && matchesStatus && matchesVerification;
   });
 
-  const handleSuspend = async (riderId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const result = await updateRiderStatus(riderId, 'suspended');
+  const handleVerification = async (riderId: string, verificationStatus: 'verified' | 'pending' | 'under_review' | 'rejected', e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const result = await updateRiderStatus(riderId, verificationStatus);
     if (result.success) {
-      showSuccess('Rider suspended');
-    } else {
-      showError(result.message || 'Failed to suspend rider');
-    }
+      showSuccess(`Rider status changed to ${verificationStatus.replace('_', ' ')}.`);
+      await getRiders();
+      setSelectedRider(prev => prev?.id === riderId ? null : prev);
+    } else showError(result.message || 'Failed to update rider');
   };
 
-  const handleCall = (phone: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCall = (phone: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     window.open(`tel:${phone}`, '_self');
   };
 
@@ -99,7 +99,7 @@ export const AdminRiders: React.FC = () => {
       {/* Verification Filter */}
       <div className="flex gap-2 flex-wrap">
         <span className="text-sm text-gray-500 dark:text-gray-400 py-2">Verification:</span>
-        {(['all', 'verified', 'pending', 'rejected'] as const).map((v) => (
+        {(['all', 'verified', 'pending', 'under_review', 'rejected'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setVerificationFilter(v)}
@@ -177,9 +177,9 @@ export const AdminRiders: React.FC = () => {
                         <Phone className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={(e) => handleSuspend(rider.id, e)}
+                        onClick={(e) => void handleVerification(rider.id, 'rejected', e)}
                         className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
-                        title="Suspend rider"
+                        title="Reject rider verification"
                       >
                         <Ban className="w-4 h-4" />
                       </button>
@@ -240,13 +240,13 @@ export const AdminRiders: React.FC = () => {
             </div>
 
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => handleCall(selectedRider.phone, {} as any)}>
+              <Button variant="secondary" className="flex-1" onClick={() => handleCall(selectedRider.phone)}>
                 <Phone className="w-4 h-4 mr-2" />
                 Call Rider
               </Button>
-              <Button variant="danger" className="flex-1" onClick={(e) => handleSuspend(selectedRider.id, e as any)}>
+              <Button variant="danger" className="flex-1" onClick={() => void handleVerification(selectedRider.id, selectedRider.verification_status === 'verified' ? 'rejected' : 'verified')}>
                 <Ban className="w-4 h-4 mr-2" />
-                Suspend
+                {selectedRider.verification_status === 'verified' ? 'Reject Verification' : 'Verify Rider'}
               </Button>
             </div>
           </div>

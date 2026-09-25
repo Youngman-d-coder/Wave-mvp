@@ -19,7 +19,7 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const user =await login({ email, password });
+      const user = await login({ email, password });
       showSuccess('Welcome back!');
 
       switch (user.user_type) {
@@ -33,18 +33,20 @@ export const LoginPage: React.FC = () => {
           navigate('/customer');
           break;
       }
-    } catch (err: any) {
-      if (err.data?.phone) {
-        // Account exists but isn't verified yet — route straight to OTP
-        // verification instead of leaving the user stuck on an error toast.
-        localStorage.setItem('wave_verify_phone', err.data.phone);
-        if (err.data.debug_otp) {
-          localStorage.setItem('wave_debug_otp', err.data.debug_otp);
-        }
+    } catch (err) {
+      const errorData = err && typeof err === 'object' && 'data' in err
+        ? (err as { data?: Record<string, unknown> }).data
+        : undefined;
+      const phone = typeof errorData?.phone === 'string' ? errorData.phone : null;
+      if (phone) {
+        localStorage.setItem('wave_verify_phone', phone);
+        const debugOtp = typeof errorData?.debug_otp === 'string' ? errorData.debug_otp : null;
+        if (debugOtp) localStorage.setItem('wave_debug_otp', debugOtp);
+        else localStorage.removeItem('wave_debug_otp');
         showError('Please verify your phone number to continue.');
         navigate('/verify-otp');
       } else {
-        showError(err.message || 'Login failed');
+        showError(err instanceof Error ? err.message : 'Login failed');
       }
     } finally {
       setIsLoading(false);
@@ -90,11 +92,7 @@ export const LoginPage: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded border-gray-300 text-wave-500 focus:ring-wave-500" />
-                <span className="text-gray-600 dark:text-gray-400">Remember me</span>
-              </label>
+            <div className="flex items-center justify-end text-sm">
               <Link to="/forgot-password" className="text-wave-500 hover:text-wave-600 font-medium">
                 Forgot password?
               </Link>

@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useRider } from '../../hooks/useRider';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
@@ -36,6 +37,7 @@ export const RiderLayout: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { showSuccess, showError } = useToast();
   const { riderProfile, toggleOnline, getProfile } = useRider();
+  const { reconnect } = useWebSocket();
   const [isToggling, setIsToggling] = useState(false);
   const navigate = useNavigate();
 
@@ -44,6 +46,7 @@ export const RiderLayout: React.FC = () => {
   }, [getProfile]);
 
   const isOnline = riderProfile?.is_online || false;
+  const isVerified = riderProfile?.verification_status === 'verified';
 
   const handleLogout = () => {
     logout();
@@ -56,6 +59,7 @@ export const RiderLayout: React.FC = () => {
     const result = await toggleOnline(!isOnline);
     setIsToggling(false);
     if (result.success) {
+      reconnect();
       showSuccess(isOnline ? 'You are now offline' : 'You are now online and ready for deliveries');
     } else {
       showError(result.message || 'Failed to update status');
@@ -111,7 +115,8 @@ export const RiderLayout: React.FC = () => {
               {/* Online Toggle */}
               <button
                 onClick={toggleOnlineStatus}
-                disabled={isToggling}
+                disabled={isToggling || !isVerified}
+                title={!isVerified ? 'Your rider account must be verified before going online' : undefined}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all disabled:opacity-50 ${
                   isOnline 
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 

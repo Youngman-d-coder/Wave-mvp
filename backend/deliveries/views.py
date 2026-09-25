@@ -1,70 +1,79 @@
-import math
-from rest_framework import views, status, permissions
+from decimal import Decimal
+
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import permissions, status, views
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+
 from .models import Delivery
-from .serializers import DeliverySerializer, CreateDeliverySerializer
+from .permissions import IsCustomerUser
+from .serializers import CreateDeliverySerializer, DeliverySerializer, FareRequestSerializer
+from .services import calculate_fare
+
+
+class DeliveryPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "limit"
+    max_page_size = 100
+
 
 class CalculateFareView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsCustomerUser]
 
     def post(self, request):
-        pickup = request.data.get('pickup')
-        dropoff = request.data.get('dropoff')
-        weight = float(request.data.get('weight', 1.0))
+        serializer = FareRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        fare = calculate_fare(
+            data["pickup"]["lat"],
+            data["pickup"]["lng"],
+            data["dropoff"]["lat"],
+            data["dropoff"]["lng"],
+            data["weight"],
+        )
+        return Response(
+            {
+                "base_fare": float(fare["base_fare"]),
+                "distance_charge": float(fare["distance_charge"]),
+                "weight_charge": float(fare["weight_charge"]),
+                "surge_multiplier": float(fare["surge_multiplier"]),
+                "promo_discount": float(fare["promo_discount"]),
+                "total": float(fare["total"]),
+                "currency": fare["currency"],
+            }
+        )
 
-        if not pickup or not dropoff:
-            return Response({'message': 'Pickup and Dropoff locations are required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        pickup_lat = float(pickup.get('lat', 6.5244))
-        pickup_lng = float(pickup.get('lng', 3.3792))
-        dropoff_lat = float(dropoff.get('lat', 6.5244))
-        dropoff_lng = float(dropoff.get('lng', 3.3792))
-
-        # Simple Euclidean distance in degrees scaled to km
-        deg_dist = math.sqrt((pickup_lat - dropoff_lat)**2 + (pickup_lng - dropoff_lng)**2)
-        estimated_distance = max(deg_dist * 111.0, 0.5)
-
-        # Fare Calculation parameters
-        base_fare = 500.00
-        per_km_rate = 150.00
-        per_kg_rate = 50.00
-        
-        distance_charge = estimated_distance * per_km_rate
-        weight_charge = max(weight - 1.0, 0.0) * per_kg_rate
-        total_fare = base_fare + distance_charge + weight_charge
-
-        return Response({
-            'base_fare': float(base_fare),
-            'distance_charge': float(distance_charge),
-            'weight_charge': float(weight_charge),
-            'surge_multiplier': 1.0,
-            'promo_discount': 0.0,
-            'total': float(total_fare),
-            'currency': 'NGN'
-        })
 
 class DeliveryListCreateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # List active deliveries (i.e. not completed, cancelled, or failed) for both customer and rider
         user = request.user
-        if user.user_type == 'rider':
-            # Active deliveries assigned to this rider
-            deliveries = Delivery.objects.filter(rider__user=user).exclude(status__in=['delivered', 'cancelled', 'failed'])
+        if user.user_type == "rider":
+            deliveries = Delivery.objects.filter(rider__user=user).exclude(status__in=["delivered", "cancelled", "failed"])
+        elif user.user_type == "admin":
+            deliveries = Delivery.objects.exclude(status__in=["delivered", "cancelled", "failed"])
         else:
-            # Active deliveries created by this customer
-            deliveries = Delivery.objects.filter(customer=user).exclude(status__in=['delivered', 'cancelled', 'failed'])
-            
-        serializer = DeliverySerializer(deliveries, many=True, context={'request': request})
-        return Response(serializer.data)
+            deliveries = Delivery.objects.filter(customer=user).exclude(status__in=["delivered", "cancelled", "failed"])
+        return Response(DeliverySerializer(deliveries.order_by("-created_at"), many=True, context={"request": request}).data)
 
     def post(self, request):
-        serializer = CreateDeliverySerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            delivery = serializer.save()
-            return Response(DeliverySerializer(delivery, context={'request': request}).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if request.user.user_type != "customer":
+            return Response({"message": "Only customer accounts can create deliveries"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CreateDeliverySerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        delivery = serializer.save()
+
+        from .consumers import notify_delivery_request
+
+        notify_delivery_request(delivery)
+        return Response(
+            DeliverySerializer(delivery, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class DeliveryDetailView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -73,81 +82,109 @@ class DeliveryDetailView(views.APIView):
         try:
             delivery = Delivery.objects.get(id=pk)
         except (Delivery.DoesNotExist, ValueError):
-            return Response({'message': 'Delivery not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-        # Ensure user is part of the delivery
-        if delivery.customer != request.user and (not delivery.rider or delivery.rider.user != request.user) and request.user.user_type != 'admin':
-            return Response({'message': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-            
-        serializer = DeliverySerializer(delivery, context={'request': request})
-        return Response(serializer.data)
+            return Response({"message": "Delivery not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if (
+            delivery.customer != request.user
+            and (not delivery.rider or delivery.rider.user != request.user)
+            and request.user.user_type != "admin"
+        ):
+            return Response({"message": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(DeliverySerializer(delivery, context={"request": request}).data)
+
 
 class CancelDeliveryView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        from .consumers import notify_delivery_update
-        try:
-            delivery = Delivery.objects.get(id=pk)
-        except (Delivery.DoesNotExist, ValueError):
-            return Response({'message': 'Delivery not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-        if delivery.customer != request.user and request.user.user_type != 'admin':
-            return Response({'message': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-            
-        if delivery.status in ['delivered', 'cancelled', 'failed']:
-            return Response({'message': f'Cannot cancel delivery in status {delivery.status}'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        reason = request.data.get('reason', 'Cancelled by customer')
-        delivery.status = 'cancelled'
-        delivery.add_timeline_event('cancelled', f"Delivery cancelled: {reason}")
-        delivery.save()
-        
-        # Notify via websocket
+        from .consumers import notify_delivery_request_closed, notify_delivery_update
+
+        with transaction.atomic():
+            try:
+                delivery = Delivery.objects.select_for_update().get(id=pk)
+            except (Delivery.DoesNotExist, ValueError):
+                return Response({"message": "Delivery not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            if delivery.customer != request.user and request.user.user_type != "admin":
+                return Response({"message": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+
+            cancellable = {"pending", "searching_rider", "rider_assigned", "rider_arrived"}
+            if delivery.status not in cancellable:
+                return Response(
+                    {"message": f"Cannot cancel delivery in status {delivery.status}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            reason = str(request.data.get("reason", "Cancelled by customer")).strip()[:500]
+            delivery.status = "cancelled"
+            delivery.add_timeline_event("cancelled", f"Delivery cancelled: {reason}")
+            delivery.save(update_fields=["status", "timeline", "updated_at"])
+
+        notify_delivery_request_closed(delivery)
         notify_delivery_update(delivery)
-        
-        return Response(DeliverySerializer(delivery, context={'request': request}).data, status=status.HTTP_200_OK)
+        return Response(DeliverySerializer(delivery, context={"request": request}).data)
+
 
 class DeliveryHistoryView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        if user.user_type == 'rider':
-            deliveries = Delivery.objects.filter(rider__user=user).order_by('-created_at')
+        if user.user_type == "rider":
+            deliveries = Delivery.objects.filter(rider__user=user).order_by("-created_at")
+        elif user.user_type == "admin":
+            deliveries = Delivery.objects.all().order_by("-created_at")
         else:
-            deliveries = Delivery.objects.filter(customer=user).order_by('-created_at')
-            
-        # Standard paginated layout
-        serializer = DeliverySerializer(deliveries, many=True, context={'request': request})
-        return Response({
-            'count': len(serializer.data),
-            'next': None,
-            'previous': None,
-            'results': serializer.data
-        })
+            deliveries = Delivery.objects.filter(customer=user).order_by("-created_at")
+
+        paginator = DeliveryPagination()
+        page = paginator.paginate_queryset(deliveries, request, view=self)
+        serializer = DeliverySerializer(page, many=True, context={"request": request})
+        return paginator.get_paginated_response(serializer.data)
+
 
 class RateRiderView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsCustomerUser]
 
     def post(self, request, pk):
         try:
-            delivery = Delivery.objects.get(id=pk)
-        except (Delivery.DoesNotExist, ValueError):
-            return Response({'message': 'Delivery not found'}, status=status.HTTP_444_NOT_FOUND)
-            
-        if delivery.customer != request.user:
-            return Response({'message': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-            
-        rating = float(request.data.get('rating', 5))
-        review = request.data.get('review', '')
-        
-        if delivery.rider:
+            rating = Decimal(str(request.data.get("rating")))
+        except Exception:
+            return Response({"message": "Rating must be a number from 1 to 5"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if rating < 1 or rating > 5:
+            return Response({"message": "Rating must be between 1 and 5"}, status=status.HTTP_400_BAD_REQUEST)
+
+        review = str(request.data.get("review", "")).strip()[:1000]
+
+        with transaction.atomic():
+            try:
+                delivery = Delivery.objects.select_for_update().get(id=pk)
+            except (Delivery.DoesNotExist, ValueError):
+                return Response({"message": "Delivery not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            if delivery.customer != request.user:
+                return Response({"message": "Access denied"}, status=status.HTTP_403_FORBIDDEN)
+            if delivery.status != "delivered" or not delivery.rider:
+                return Response({"message": "Only completed deliveries can be rated"}, status=status.HTTP_400_BAD_REQUEST)
+            if any(event.get("event_type") == "rating" for event in (delivery.timeline or [])):
+                return Response({"message": "This delivery has already been rated"}, status=status.HTTP_409_CONFLICT)
+
             rider = delivery.rider
-            # Update rider rating
-            total_rating_val = (rider.rating * rider.total_reviews) + rating
+            total_rating = Decimal(str(rider.rating)) * rider.total_reviews + rating
             rider.total_reviews += 1
-            rider.rating = round(total_rating_val / rider.total_reviews, 2)
-            rider.save()
-            
-        return Response({'message': 'Rating submitted successfully'}, status=status.HTTP_200_OK)
+            rider.rating = round(float(total_rating / rider.total_reviews), 2)
+            rider.save(update_fields=["total_reviews", "rating", "updated_at"])
+
+            delivery.timeline.append(
+                {
+                    "status": "delivered",
+                    "event_type": "rating",
+                    "timestamp": timezone.now().isoformat(),
+                    "note": f"Customer rated this delivery {rating}/5" + (" with feedback." if review else "."),
+                }
+            )
+            delivery.save(update_fields=["timeline", "updated_at"])
+
+        return Response({"message": "Rating submitted successfully"})

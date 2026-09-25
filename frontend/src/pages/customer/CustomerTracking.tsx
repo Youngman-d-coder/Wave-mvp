@@ -8,29 +8,28 @@ import { Delivery } from '../../types';
 export const CustomerTracking: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { getDelivery, rateRider } = useDelivery();
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (id) {
-      loadDelivery(id);
-    }
-  }, [id]);
-
-  const loadDelivery = async (deliveryId: string) => {
-    setIsLoading(true);
-    const result = await getDelivery(deliveryId);
-    if (result) {
-      setDelivery(result);
-    }
-    setIsLoading(false);
-  };
+    let cancelled = false;
+    const load = async () => {
+      if (!id) { setIsLoading(false); return; }
+      setIsLoading(true);
+      const result = await getDelivery(id);
+      if (!cancelled) { setDelivery(result); setIsLoading(false); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [getDelivery, id]);
 
   const handleRateRider = async (rating: number, review?: string) => {
-    if (!delivery) return;
-    await rateRider(delivery.id, rating, review);
-    showSuccess('Thank you for your feedback!');
+    if (!delivery) return false;
+    const result = await rateRider(delivery.id, rating, review);
+    if (result.success) { showSuccess('Thank you for your feedback!'); return true; }
+    showError(result.message || 'Could not submit your rating.');
+    return false;
   };
 
   if (isLoading) {

@@ -1,105 +1,99 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+
+type SocketPayload = unknown;
+type Subscriber = (data: SocketPayload) => void;
 
 interface WebSocketContextType {
   isConnected: boolean;
-  sendMessage: (type: string, data: any) => void;
-  lastMessage: any;
-  subscribe: (channel: string, callback: (data: any) => void) => () => void;
+  lastMessage: unknown;
+  subscribe: (channel: string, callback: Subscriber) => () => void;
+  reconnect: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
-
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, isAuthenticated } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<any>(null);
+  const [lastMessage, setLastMessage] = useState<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const subscribersRef = useRef<Map<string, Set<(data: any) => void>>>(new Map());
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const subscribersRef = useRef<Map<string, Set<Subscriber>>>(new Map());
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldReconnectRef = useRef(false);
   const tokenRef = useRef(token);
 
-  // Keep token ref in sync
-  useEffect(() => {
-    tokenRef.current = token;
-  }, [token]);
+  useEffect(() => { tokenRef.current = token; }, [token]);
 
   const connect = useCallback(() => {
     const currentToken = tokenRef.current;
-    if (!currentToken || wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!shouldReconnectRef.current || !currentToken || [WebSocket.OPEN, WebSocket.CONNECTING].includes(wsRef.current?.readyState ?? -1)) return;
 
-    const ws = new WebSocket(`${WS_BASE_URL}/?token=${currentToken}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/?token=${encodeURIComponent(currentToken)}`);
+    wsRef.current = ws;
 
-    ws.onopen = () => {
-      setIsConnected(true);
-      console.log('🔌 WebSocket connected');
-    };
-
-    ws.onmessage = (event) => {
+    ws.onopen = () => setIsConnected(true);
+    ws.onmessage = event => {
       try {
-        const message = JSON.parse(event.data);
+        const message = JSON.parse(event.data) as { type?: string; data?: unknown };
         setLastMessage(message);
-
-        const channel = message.type;
-        const callbacks = subscribersRef.current.get(channel);
-        if (callbacks) {
-          callbacks.forEach(cb => cb(message.data));
-        }
-      } catch (err) {
-        console.error('WebSocket message parse error:', err);
+        if (message.type) subscribersRef.current.get(message.type)?.forEach(cb => cb(message.data));
+      } catch (error) {
+        console.error('WebSocket message parse error:', error);
       }
     };
-
     ws.onclose = () => {
+      if (wsRef.current === ws) wsRef.current = null;
       setIsConnected(false);
-      console.log('🔌 WebSocket disconnected');
-      reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      if (shouldReconnectRef.current) reconnectTimeoutRef.current = setTimeout(connect, 3000);
     };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      ws.close();
-    };
-
-    wsRef.current = ws;
+    ws.onerror = () => ws.close();
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      connect();
-    }
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+    shouldReconnectRef.current = isAuthenticated;
+    if (isAuthenticated) connect();
+    else {
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
       wsRef.current?.close();
-    };
-  }, [isAuthenticated, connect]);
-
-  const sendMessage = useCallback((type: string, data: any) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, data }));
+      wsRef.current = null;
+      setIsConnected(false);
     }
-  }, []);
-
-  const subscribe = useCallback((channel: string, callback: (data: any) => void) => {
-    if (!subscribersRef.current.has(channel)) {
-      subscribersRef.current.set(channel, new Set());
-    }
-    subscribersRef.current.get(channel)!.add(callback);
 
     return () => {
-      subscribersRef.current.get(channel)?.delete(callback);
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+      wsRef.current?.close();
+      wsRef.current = null;
     };
+  }, [connect, isAuthenticated]);
+
+  const reconnect = useCallback(() => {
+    if (!isAuthenticated || !tokenRef.current) return;
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    reconnectTimeoutRef.current = null;
+    shouldReconnectRef.current = true;
+
+    const current = wsRef.current;
+    if (current) {
+      current.onclose = null;
+      current.close();
+      wsRef.current = null;
+    }
+    setIsConnected(false);
+    connect();
+  }, [connect, isAuthenticated]);
+
+  const subscribe = useCallback((channel: string, callback: Subscriber) => {
+    if (!subscribersRef.current.has(channel)) subscribersRef.current.set(channel, new Set());
+    subscribersRef.current.get(channel)!.add(callback);
+    return () => subscribersRef.current.get(channel)?.delete(callback);
   }, []);
 
-  return (
-    <WebSocketContext.Provider value={{ isConnected, sendMessage, lastMessage, subscribe }}>
-      {children}
-    </WebSocketContext.Provider>
-  );
+  return <WebSocketContext.Provider value={{ isConnected, lastMessage, subscribe, reconnect }}>{children}</WebSocketContext.Provider>;
 };
 
 export const useWebSocket = () => {

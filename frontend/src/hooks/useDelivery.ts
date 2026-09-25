@@ -1,75 +1,52 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useApi } from './useApi';
-import { Delivery, FareBreakdown, GeoLocation, PaginatedResponse } from '../types';
+import { Delivery, DeliveryCreateRequest, FareBreakdown, GeoLocation, PaginatedResponse } from '../types';
 
 export function useDelivery() {
-  const api = useApi<Delivery>();
+  const { get, post, isLoading, error } = useApi<Delivery>();
   const [activeDelivery, setActiveDelivery] = useState<Delivery | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<Delivery[]>([]);
 
-  const calculateFare = useCallback(async (
-    pickup: GeoLocation,
-    dropoff: GeoLocation,
-    weight: number
-  ): Promise<FareBreakdown | null> => {
-    const response = await api.post<FareBreakdown>('/deliveries/calculate-fare/', {
-      pickup,
-      dropoff,
-      weight,
-    });
+  const calculateFare = useCallback(async (pickup: GeoLocation, dropoff: GeoLocation, weight: number): Promise<FareBreakdown | null> => {
+    const response = await post<FareBreakdown>('/deliveries/calculate-fare/', { pickup, dropoff, weight });
     return response.success ? (response.data ?? null) : null;
-  }, [api]);
+  }, [post]);
 
-  const createDelivery = useCallback(async (deliveryData: Partial<Delivery>): Promise<Delivery | null> => {
-    const response = await api.post<Delivery>('/deliveries/', deliveryData);
+  const createDelivery = useCallback(async (deliveryData: DeliveryCreateRequest): Promise<Delivery | null> => {
+    const response = await post<Delivery>('/deliveries/', deliveryData);
     if (response.success && response.data) {
       setActiveDelivery(response.data);
       return response.data;
     }
     return null;
-  }, [api]);
+  }, [post]);
 
   const getDelivery = useCallback(async (id: string): Promise<Delivery | null> => {
-    const response = await api.get<Delivery>(`/deliveries/${id}/`);
+    const response = await get<Delivery>(`/deliveries/${id}/`);
     if (response.success && response.data) {
       setActiveDelivery(response.data);
       return response.data;
     }
     return null;
-  }, [api]);
+  }, [get]);
 
   const cancelDelivery = useCallback(async (id: string, reason?: string) => {
-    const response = await api.post(`/deliveries/${id}/cancel/`, { reason });
-    if (response.success) {
-      setActiveDelivery(null);
-    }
+    const response = await post(`/deliveries/${id}/cancel/`, { reason: reason ?? '' });
+    if (response.success) setActiveDelivery(null);
     return response;
-  }, [api]);
+  }, [post]);
 
-  const getHistory = useCallback(async (page: number = 1, limit: number = 10) => {
-    const response = await api.get<PaginatedResponse<Delivery>>(`/deliveries/history/?page=${page}&limit=${limit}`);
-    if (response.success && response.data) {
-      setDeliveryHistory(response.data.results || []);
-    }
+  const getHistory = useCallback(async (page = 1, limit = 10) => {
+    const response = await get<PaginatedResponse<Delivery>>(`/deliveries/history/?page=${page}&limit=${limit}`);
+    if (response.success && response.data) setDeliveryHistory(response.data.results || []);
     return response;
-  }, [api]);
+  }, [get]);
 
-  const rateRider = useCallback(async (deliveryId: string, rating: number, review?: string) => {
-    return await api.post(`/deliveries/${deliveryId}/rate/`, { rating, review });
-  }, [api]);
+  const rateRider = useCallback(async (deliveryId: string, rating: number, review?: string) => (
+    post(`/deliveries/${deliveryId}/rate/`, { rating, review: review ?? '' })
+  ), [post]);
 
-  return {
-    isLoading: api.isLoading,
-    error: api.error,
-    activeDelivery,
-    deliveryHistory,
-    calculateFare,
-    createDelivery,
-    getDelivery,
-    cancelDelivery,
-    getHistory,
-    rateRider,
-  };
+  return { isLoading, error, activeDelivery, deliveryHistory, calculateFare, createDelivery, getDelivery, cancelDelivery, getHistory, rateRider };
 }
 
 export default useDelivery;

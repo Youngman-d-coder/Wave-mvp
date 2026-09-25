@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapPin, Clock, Phone, MessageSquare, Package, CheckCircle } from 'lucide-react';
+import { MapPin, Clock, Phone, Package, CheckCircle } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
@@ -11,14 +11,16 @@ import { useWebSocket } from '../../contexts/WebSocketContext';
 
 interface LiveTrackingProps {
   delivery: Delivery;
-  onRateRider?: (rating: number, review?: string) => void;
+  onRateRider?: (rating: number, review?: string) => Promise<boolean>;
 }
 
 const statusSteps: { status: DeliveryStatus; label: string; icon: React.ReactNode }[] = [
+  { status: 'searching_rider', label: 'Finding Rider', icon: <Clock className="w-4 h-4" /> },
   { status: 'rider_assigned', label: 'Rider Assigned', icon: <CheckCircle className="w-4 h-4" /> },
   { status: 'rider_arrived', label: 'Rider Arrived', icon: <MapPin className="w-4 h-4" /> },
   { status: 'picked_up', label: 'Picked Up', icon: <Package className="w-4 h-4" /> },
   { status: 'in_transit', label: 'In Transit', icon: <Clock className="w-4 h-4" /> },
+  { status: 'near_destination', label: 'Near Destination', icon: <MapPin className="w-4 h-4" /> },
   { status: 'delivered', label: 'Delivered', icon: <CheckCircle className="w-4 h-4" /> },
 ];
 
@@ -31,13 +33,17 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [hoverRating, setHoverRating] = useState(0);
+  const [hasRated, setHasRated] = useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribe('delivery_update', (data) => {
-      if (data.delivery_id === delivery.id) {
-        if (data.rider_location) setRiderLocation(data.rider_location);
-        if (data.status) setCurrentStatus(data.status);
-        if (data.eta) setEta(data.eta);
+      if (!data || typeof data !== 'object') return;
+      const update = data as { delivery_id?: string; rider_location?: GeoLocation; status?: DeliveryStatus; eta?: number };
+      if (update.delivery_id === delivery.id) {
+        if (update.rider_location) setRiderLocation(update.rider_location);
+        if (update.status) setCurrentStatus(update.status);
+        if (typeof update.eta === 'number') setEta(update.eta);
       }
     });
     return unsubscribe;
@@ -46,9 +52,13 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
   const currentStepIndex = statusSteps.findIndex(s => s.status === currentStatus);
   const isDelivered = currentStatus === 'delivered';
 
-  const handleSubmitRating = () => {
-    if (rating === 0) return;
-    onRateRider?.(rating, review);
+  const handleSubmitRating = async () => {
+    if (rating === 0 || !onRateRider) return;
+    setIsSubmittingRating(true);
+    const success = await onRateRider(rating, review);
+    setIsSubmittingRating(false);
+    if (!success) return;
+    setHasRated(true);
     setShowRating(false);
     setRating(0);
     setReview('');
@@ -116,9 +126,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
               >
                 <Phone className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="sm" className="p-2">
-                <MessageSquare className="w-5 h-5" />
-              </Button>
             </div>
           </div>
         </Card>
@@ -153,7 +160,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
                     </p>
                     {isCurrent && eta && (
                       <p className="text-sm text-wave-500">
-                        ETA: {Math.ceil(eta / 60)} mins
+                        ETA: {Math.ceil(eta)} mins
                       </p>
                     )}
                   </div>
@@ -165,7 +172,7 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
       </Card>
 
       {/* Rating Section */}
-      {isDelivered && onRateRider && !showRating && (
+      {isDelivered && onRateRider && !showRating && !hasRated && (
         <Card className="p-6 text-center">
           <h3 className="font-heading font-bold text-gray-900 dark:text-white mb-2">
             Delivery Complete! 🎉
@@ -214,8 +221,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
               Skip
             </Button>
             <Button
-              onClick={handleSubmitRating}
-              disabled={rating === 0}
+              onClick={() => void handleSubmitRating()}
+              disabled={rating === 0 || isSubmittingRating}
+              isLoading={isSubmittingRating}
               className="flex-1"
             >
               Submit Review

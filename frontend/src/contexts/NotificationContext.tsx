@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useWebSocket } from './WebSocketContext';
+import { useAuth } from './AuthContext';
 
 export interface Notification {
   id: string;
@@ -8,7 +9,7 @@ export interface Notification {
   message: string;
   read: boolean;
   created_at: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 interface NotificationContextType {
@@ -22,75 +23,55 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
+function parseStored(key: string): Notification[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as Notification[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notifications, setNotifications] = useState<Notification[]>(() => {
-    try {
-      const stored = localStorage.getItem('wave_notifications');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const { user } = useAuth();
   const { subscribe } = useWebSocket();
+  const storageKey = useMemo(() => `wave_notifications_${user?.id ?? 'anonymous'}`, [user?.id]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Persist notifications
+  useEffect(() => { setNotifications(parseStored(storageKey)); }, [storageKey]);
   useEffect(() => {
-    localStorage.setItem('wave_notifications', JSON.stringify(notifications.slice(0, 50)));
-  }, [notifications]);
-
-  // Listen for WebSocket notifications
-  useEffect(() => {
-    const unsub = subscribe('notification', (data) => {
-      const newNotification: Notification = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        type: data.type || 'system',
-        title: data.title || 'Notification',
-        message: data.message || '',
-        read: false,
-        created_at: new Date().toISOString(),
-        data: data.data,
-      };
-      setNotifications(prev => [newNotification, ...prev].slice(0, 50));
-    });
-    return unsub;
-  }, [subscribe]);
-
-  const markAsRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  }, []);
-
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  }, []);
-
-  const removeNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  }, []);
+    if (!user) return;
+    localStorage.setItem(storageKey, JSON.stringify(notifications.slice(0, 50)));
+  }, [notifications, storageKey, user]);
 
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'read' | 'created_at'>) => {
-    const newNotification: Notification = {
+    const item: Notification = {
       ...notification,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       read: false,
       created_at: new Date().toISOString(),
     };
-    setNotifications(prev => [newNotification, ...prev].slice(0, 50));
+    setNotifications(prev => [item, ...prev].slice(0, 50));
   }, []);
 
+  useEffect(() => subscribe('delivery_update', data => {
+    if (!data || typeof data !== 'object') return;
+    const update = data as { delivery_id?: string; status?: string };
+    if (!update.delivery_id || !update.status) return;
+    addNotification({
+      type: 'delivery',
+      title: 'Delivery update',
+      message: `Delivery status changed to ${update.status.replace(/_/g, ' ')}.`,
+      data: data as Record<string, unknown>,
+    });
+  }), [addNotification, subscribe]);
+
+  const markAsRead = useCallback((id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)), []);
+  const markAllAsRead = useCallback(() => setNotifications(prev => prev.map(n => ({ ...n, read: true }))), []);
+  const removeNotification = useCallback((id: string) => setNotifications(prev => prev.filter(n => n.id !== id)), []);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  return (
-    <NotificationContext.Provider value={{ 
-      notifications, 
-      unreadCount, 
-      markAsRead, 
-      markAllAsRead,
-      removeNotification,
-      addNotification,
-    }}>
-      {children}
-    </NotificationContext.Provider>
-  );
+  return <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, removeNotification, addNotification }}>{children}</NotificationContext.Provider>;
 };
 
 export const useNotifications = () => {

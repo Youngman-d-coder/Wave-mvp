@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MapPin, User, Phone, Weight, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -12,6 +12,7 @@ interface BookingFormProps {
   pickupAddress?: string;
   dropoffAddress?: string;
   onSubmit: (data: BookingData) => void;
+  onDetailsChange?: (data: BookingData) => void;
   fare: { total: number; currency: string } | null;
   isCalculating: boolean;
 }
@@ -25,7 +26,7 @@ export interface BookingData {
 }
 
 const packageTypes: { type: PackageType; label: string; icon: string; maxWeight: number }[] = [
-  { type: 'document', label: 'Document', icon: '📄', maxWeight: 1 },
+  { type: 'document', label: 'Document', icon: '📄', maxWeight: 2 },
   { type: 'small_package', label: 'Small Package', icon: '📦', maxWeight: 5 },
   { type: 'medium_package', label: 'Medium Package', icon: '📦', maxWeight: 15 },
   { type: 'large_package', label: 'Large Package', icon: '📦', maxWeight: 50 },
@@ -47,6 +48,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   onSubmit,
   fare,
   isCalculating,
+  onDetailsChange,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [bookingData, setBookingData] = useState<BookingData>({
@@ -57,9 +59,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     notes: '',
   });
 
-  const updateField = (field: keyof BookingData, value: any) => {
+  const updateField = <K extends keyof BookingData>(field: K, value: BookingData[K]) => {
     setBookingData(prev => ({ ...prev, [field]: value }));
   };
+
+  useEffect(() => {
+    onDetailsChange?.(bookingData);
+  }, [bookingData, onDetailsChange]);
 
   const canProceed = () => {
     switch (currentStep) {
@@ -144,7 +150,11 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             {packageTypes.map((pkg) => (
               <button
                 key={pkg.type}
-                onClick={() => updateField('packageType', pkg.type)}
+                type="button"
+                onClick={() => {
+                  updateField('packageType', pkg.type);
+                  if (bookingData.weight > pkg.maxWeight) updateField('weight', pkg.maxWeight);
+                }}
                 className={`p-4 rounded-xl border-2 transition-all text-center ${
                   bookingData.packageType === pkg.type
                     ? 'border-wave-500 bg-wave-50 dark:bg-wave-900/20'

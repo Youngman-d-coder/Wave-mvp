@@ -1,93 +1,52 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useApi } from './useApi';
-import { Rider, Withdrawal, BankAccount, PaginatedResponse } from '../types';
+import { Rider, Withdrawal, BankAccount, PaginatedResponse, DeliveryRequest, DeliveryStatus, GeoLocation } from '../types';
 
-interface EarningsSummary {
-  today: number;
-  week: number;
-  month: number;
-  total: number;
-}
+export interface EarningsSummary { today: number; week: number; month: number; last_month: number; total: number; }
 
 export function useRider() {
-  const api = useApi<Rider>();
+  const { get, post, isLoading, error } = useApi<Rider>();
   const [riderProfile, setRiderProfile] = useState<Rider | null>(null);
-  const [earnings, setEarnings] = useState({
-    today: 0,
-    week: 0,
-    month: 0,
-    total: 0,
-  });
+  const [earnings, setEarnings] = useState<EarningsSummary>({ today: 0, week: 0, month: 0, last_month: 0, total: 0 });
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
 
   const getProfile = useCallback(async () => {
-    const response = await api.get<Rider>('/riders/profile/');
-    if (response.success && response.data) {
-      setRiderProfile(response.data);
-    }
+    const response = await get<Rider>('/riders/profile/');
+    if (response.success && response.data) setRiderProfile(response.data);
     return response;
-  }, [api]);
+  }, [get]);
 
   const toggleOnline = useCallback(async (isOnline: boolean) => {
-    const response = await api.post<Rider>('/riders/toggle-status/', { is_online: isOnline });
-    if (response.success && response.data) {
-      setRiderProfile(prev => prev ? { ...prev, is_online: isOnline } : null);
-    }
+    const response = await post<Rider>('/riders/toggle-status/', { is_online: isOnline });
+    if (response.success) setRiderProfile(prev => prev ? { ...prev, is_online: isOnline, status: isOnline ? 'online' : 'offline' } : null);
     return response;
-  }, [api]);
+  }, [post]);
 
-  const acceptDelivery = useCallback(async (deliveryId: string) => {
-    return await api.post(`/riders/deliveries/${deliveryId}/accept/`);
-  }, [api]);
+  const getAvailableDeliveries = useCallback(async () => {
+    const response = await get<{ count: number; results: DeliveryRequest[] }>('/riders/deliveries/available/');
+    return response.success ? (response.data?.results ?? []) : [];
+  }, [get]);
 
-  const rejectDelivery = useCallback(async (deliveryId: string, reason?: string) => {
-    return await api.post(`/riders/deliveries/${deliveryId}/reject/`, { reason });
-  }, [api]);
-
-  const updateDeliveryStatus = useCallback(async (deliveryId: string, status: string, location?: any) => {
-    return await api.post(`/riders/deliveries/${deliveryId}/update-status/`, { status, location });
-  }, [api]);
+  const acceptDelivery = useCallback((deliveryId: string) => post(`/riders/deliveries/${deliveryId}/accept/`), [post]);
+  const rejectDelivery = useCallback((deliveryId: string, reason?: string) => post(`/riders/deliveries/${deliveryId}/reject/`, { reason: reason ?? '' }), [post]);
+  const updateDeliveryStatus = useCallback((deliveryId: string, status: DeliveryStatus, location?: GeoLocation) => post(`/riders/deliveries/${deliveryId}/update-status/`, { status, ...(location ? { location } : {}) }), [post]);
 
   const getEarnings = useCallback(async () => {
-    const response = await api.get<EarningsSummary>('/riders/earnings/');
-    if (response.success && response.data) {
-      setEarnings(response.data);
-    }
+    const response = await get<EarningsSummary>('/riders/earnings/');
+    if (response.success && response.data) setEarnings(response.data);
     return response;
-  }, [api]);
+  }, [get]);
 
   const getWithdrawals = useCallback(async () => {
-    const response = await api.get<PaginatedResponse<Withdrawal>>('/riders/withdrawals/');
-    if (response.success && response.data) {
-      setWithdrawals(response.data.results || []);
-    }
+    const response = await get<PaginatedResponse<Withdrawal>>('/riders/withdrawals/');
+    if (response.success && response.data) setWithdrawals(response.data.results || []);
     return response;
-  }, [api]);
+  }, [get]);
 
-  const requestWithdrawal = useCallback(async (amount: number, bankAccountId: string) => {
-    return await api.post('/riders/withdrawals/', { amount, bank_account_id: bankAccountId });
-  }, [api]);
+  const requestWithdrawal = useCallback((amount: number, bankAccountId: string) => post('/riders/withdrawals/', { amount, bank_account_id: bankAccountId }), [post]);
+  const addBankAccount = useCallback((account: Omit<BankAccount, 'id'>) => post('/riders/bank-accounts/', account), [post]);
 
-  const addBankAccount = useCallback(async (account: Omit<BankAccount, 'id'>) => {
-    return await api.post('/riders/bank-accounts/', account);
-  }, [api]);
-
-  return {
-    isLoading: api.isLoading,
-    error: api.error,
-    riderProfile,
-    earnings,
-    withdrawals,
-    getProfile,
-    toggleOnline,
-    acceptDelivery,
-    rejectDelivery,
-    updateDeliveryStatus,
-    getEarnings,
-    getWithdrawals,
-    requestWithdrawal,
-    addBankAccount,
-  };
+  return { isLoading, error, riderProfile, earnings, withdrawals, getProfile, toggleOnline, getAvailableDeliveries, acceptDelivery, rejectDelivery, updateDeliveryStatus, getEarnings, getWithdrawals, requestWithdrawal, addBankAccount };
 }
 
 export default useRider;

@@ -32,7 +32,7 @@ class RiderProfile(models.Model):
     
     rating = models.FloatField(default=5.0)
     total_reviews = models.IntegerField(default=0)
-    verification_status = models.CharField(max_length=20, choices=VERIFICATION_CHOICES, default='verified') # Default verified for MVP
+    verification_status = models.CharField(max_length=20, choices=VERIFICATION_CHOICES, default='pending')
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

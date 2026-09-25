@@ -57,7 +57,8 @@ export const RiderWallet: React.FC = () => {
     }
 
     setIsProcessing(true);
-    const result = await requestWithdrawal(amount, bankAccounts[0].id);
+    const defaultAccount = bankAccounts.find(account => account.is_default) ?? bankAccounts[0];
+    const result = await requestWithdrawal(amount, defaultAccount.id);
     setIsProcessing(false);
 
     if (result.success) {
@@ -110,12 +111,12 @@ export const RiderWallet: React.FC = () => {
 
   // Combine earnings and withdrawals for transaction history
   // In a real app, this would come from a dedicated transactions endpoint
-  const transactions = withdrawals.map((w: any) => ({
+  const transactions = withdrawals.map((w) => ({
     id: w.id,
     type: 'withdrawal' as const,
     amount: w.amount,
     description: `Withdrawal to ${w.bank_account?.bank_name || 'Bank'}`,
-    date: w.created_at,
+    date: w.requested_at,
     status: w.status,
   }));
 
@@ -144,7 +145,7 @@ export const RiderWallet: React.FC = () => {
             <Badge variant="warning">Pending</Badge>
           </div>
           <p className="text-3xl font-bold text-gray-900 dark:text-white">₦{wallet.pending_balance.toLocaleString()}</p>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Clearing in 24h</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Awaiting payout processing</p>
         </Card>
       </div>
 
@@ -155,9 +156,9 @@ export const RiderWallet: React.FC = () => {
             <div>
               <p className="text-sm text-gray-500">Default Bank Account</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {bankAccounts[0].bank_name} · ****{bankAccounts[0].account_number.slice(-4)}
+                {(bankAccounts.find(account => account.is_default) ?? bankAccounts[0]).bank_name} · ****{(bankAccounts.find(account => account.is_default) ?? bankAccounts[0]).account_number.slice(-4)}
               </p>
-              <p className="text-sm text-gray-500">{bankAccounts[0].account_name}</p>
+              <p className="text-sm text-gray-500">{(bankAccounts.find(account => account.is_default) ?? bankAccounts[0]).account_name}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setShowBankModal(true)}>
               <Plus className="w-4 h-4 mr-1" />
@@ -189,10 +190,10 @@ export const RiderWallet: React.FC = () => {
       {/* Transaction History */}
       <Card className="p-6">
         <h3 className="font-heading font-bold text-lg text-gray-900 dark:text-white mb-4">
-          Recent Transactions
+          Recent Withdrawals
         </h3>
         {transactions.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">No transactions yet</p>
+          <p className="text-center text-gray-500 py-8">No withdrawals yet</p>
         ) : (
           <div className="space-y-4">
             {transactions.map((tx) => (
@@ -234,6 +235,8 @@ export const RiderWallet: React.FC = () => {
           <Input
             label="Amount"
             type="number"
+            min="0.01"
+            step="0.01"
             value={withdrawAmount}
             onChange={(e) => setWithdrawAmount(e.target.value)}
             placeholder="Enter amount"

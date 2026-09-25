@@ -1,197 +1,204 @@
-import random
+import logging
+import secrets
 from datetime import timedelta
-from django.utils import timezone
-from django.contrib.auth import get_user_model
+
 from django.conf import settings
-from rest_framework import status, views, permissions
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password, make_password
+from django.utils import timezone
+from rest_framework import permissions, status, views
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import OTPVerification
-from .serializers import RegisterSerializer, UserSerializer, OTPSendSerializer, OTPVerifySerializer
+from .serializers import OTPVerifySerializer, OTPSendSerializer, RegisterSerializer, UserSerializer
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# Helper to send OTP (prints to console, sends SMS if twilio is installed and config is present)
-def send_otp(phone, code):
-    print(f"\n==========================================")
-    print(f"🔑 WAVE SECURITY: Verification Code for {phone}")
-    print(f"👉 YOUR OTP CODE IS: {code}")
-    print(f"==========================================\n")
-    
-    # Check if twilio is configured
-    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
-    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
-    from_number = getattr(settings, 'TWILIO_FROM_NUMBER', '')
-    
-    if account_sid and auth_token and from_number:
-        try:
-            from twilio.rest import Client
-            client = Client(account_sid, auth_token)
-            client.messages.create(
-                body=f"Your WAVE verification code is: {code}",
-                from_=from_number,
-                to=phone
-            )
-            print(f"Twilio SMS sent to {phone}")
-        except Exception as e:
-            print(f"Failed to send Twilio SMS: {e}")
+
+def _generate_otp() -> str:
+    return f"{secrets.randbelow(900000) + 100000:06d}"
+
+
+def _store_otp(phone: str, code: str) -> None:
+    verification, created = OTPVerification.objects.get_or_create(
+        phone=phone,
+        defaults={"otp_code": make_password(code), "is_verified": False},
+    )
+    if not created:
+        verification.otp_code = make_password(code)
+        verification.is_verified = False
+        verification.created_at = timezone.now()
+        verification.save(update_fields=["otp_code", "is_verified", "created_at"])
+
+
+def send_otp(phone: str, code: str) -> bool:
+    """Send an OTP through Twilio when configured; never log the raw code by default."""
+    account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
+    auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "")
+    from_number = getattr(settings, "TWILIO_FROM_NUMBER", "")
+
+    if not (account_sid and auth_token and from_number):
+        logger.info("OTP provider is not configured for %s", phone)
+        return False
+
+    try:
+        from twilio.rest import Client
+
+        client = Client(account_sid, auth_token)
+        client.messages.create(
+            body=f"Your WAVE verification code is: {code}",
+            from_=from_number,
+            to=phone,
+        )
+        return True
+    except Exception:
+        logger.exception("Failed to send OTP to %s", phone)
+        return False
+
+
+def _issue_otp(phone: str) -> str:
+    code = _generate_otp()
+    _store_otp(phone, code)
+    send_otp(phone, code)
+    return code
+
+
+def _maybe_attach_debug_otp(payload: dict, code: str) -> dict:
+    if getattr(settings, "EXPOSE_OTP_FOR_TESTING", False):
+        payload["debug_otp"] = code
+    return payload
+
 
 class RegisterView(views.APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth"
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            
-            # Generate OTP
-            otp_code = f"{random.randint(100000, 999999)}"
-            OTPVerification.objects.update_or_create(
-                phone=user.phone,
-                defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
-            )
-            
-            # Send OTP
-            if user.phone:
-                send_otp(user.phone, otp_code)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        otp_code = _issue_otp(user.phone)
 
-            response_data = UserSerializer(user).data
-            # Twilio isn't wired up yet, so surface the code directly in the
-            # response while EXPOSE_OTP_FOR_TESTING (or DEBUG) is on, so the
-            # frontend can display it instead of leaving the user stuck.
-            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
-                response_data['debug_otp'] = otp_code
+        response_data = UserSerializer(user).data
+        _maybe_attach_debug_otp(response_data, otp_code)
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(views.APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth"
 
     def post(self, request):
-        email = request.data.get('email')
-        password = request.data.get('password')
-        
+        email = str(request.data.get("email", "")).strip().lower()
+        password = request.data.get("password")
+
         if not email or not password:
-            return Response({'message': 'Please provide both email and password'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({'message': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-            
-        if not user.check_password(password):
-            return Response({'message': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-            
-        # Ensure user is verified (Optional bypass for Admin/Demo accounts if desired)
-        if not user.is_verified and user.user_type != 'admin':
-            # Resend OTP if needed
-            otp_code = f"{random.randint(100000, 999999)}"
-            OTPVerification.objects.update_or_create(
-                phone=user.phone,
-                defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
+            return Response(
+                {"message": "Please provide both email and password"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            if user.phone:
-                send_otp(user.phone, otp_code)
 
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user.is_active or not user.check_password(password):
+            return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user.is_verified:
+            otp_code = _issue_otp(user.phone)
             response_data = {
-                'message': 'Phone number not verified. A new OTP has been sent.',
-                'phone': user.phone,
+                "message": "Phone number not verified. A new OTP has been sent.",
+                "phone": user.phone,
             }
-            if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
-                response_data['debug_otp'] = otp_code
-
+            _maybe_attach_debug_otp(response_data, otp_code)
             return Response(response_data, status=status.HTTP_403_FORBIDDEN)
-            
+
         refresh = RefreshToken.for_user(user)
-        return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserSerializer(user).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
 class VerifyOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "otp"
 
     def post(self, request):
         serializer = OTPVerifySerializer(data=request.data)
-        if serializer.is_valid():
-            phone = serializer.validated_data['phone']
-            otp = serializer.validated_data['otp']
-            
-            # Find the verification record
-            try:
-                verification = OTPVerification.objects.filter(phone=phone, is_verified=False).latest('created_at')
-            except OTPVerification.DoesNotExist:
-                return Response({'message': 'No pending OTP verification found for this phone number'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            # Check expiration (5 minutes)
-            if timezone.now() - verification.created_at > timedelta(minutes=5):
-                return Response({'message': 'OTP code has expired'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            if verification.otp_code == otp:
-                verification.is_verified = True
-                verification.save()
-                
-                # Mark user as verified
-                try:
-                    user = User.objects.get(phone=phone)
-                    user.is_verified = True
-                    user.save()
-                except User.DoesNotExist:
-                    pass
-                    
-                return Response({'message': 'OTP verification successful'}, status=status.HTTP_200_OK)
-            return Response({'message': 'Invalid OTP code'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.validated_data["phone"]
+        otp = serializer.validated_data["otp"]
+
+        try:
+            verification = OTPVerification.objects.get(phone=phone, is_verified=False)
+        except OTPVerification.DoesNotExist:
+            return Response(
+                {"message": "No pending OTP verification found for this phone number"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if timezone.now() - verification.created_at > timedelta(minutes=5):
+            return Response({"message": "OTP code has expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not check_password(otp, verification.otp_code):
+            return Response({"message": "Invalid OTP code"}, status=status.HTTP_400_BAD_REQUEST)
+
+        verification.is_verified = True
+        verification.save(update_fields=["is_verified"])
+        User.objects.filter(phone=phone).update(is_verified=True)
+        return Response({"message": "OTP verification successful"}, status=status.HTTP_200_OK)
+
 
 class ResendOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "otp"
 
     def post(self, request):
         serializer = OTPSendSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        phone = serializer.validated_data['phone']
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.validated_data["phone"]
 
         try:
             user = User.objects.get(phone=phone)
         except User.DoesNotExist:
-            return Response({'message': 'No account found for this phone number'}, status=status.HTTP_404_NOT_FOUND)
+            # Avoid making this endpoint an account-enumeration oracle.
+            return Response({"message": "If the account exists, a new OTP has been sent."})
 
         if user.is_verified:
-            return Response({'message': 'This account is already verified'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "This account is already verified"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate a fresh OTP for the existing account (do NOT re-register)
-        otp_code = f"{random.randint(100000, 999999)}"
-        OTPVerification.objects.update_or_create(
-            phone=phone,
-            defaults={'otp_code': otp_code, 'is_verified': False, 'created_at': timezone.now()}
-        )
-
-        send_otp(phone, otp_code)
-
-        response_data = {'message': 'A new OTP has been sent'}
-        if settings.DEBUG or getattr(settings, 'EXPOSE_OTP_FOR_TESTING', False):
-            response_data['debug_otp'] = otp_code
-
+        otp_code = _issue_otp(phone)
+        response_data = {"message": "A new OTP has been sent"}
+        _maybe_attach_debug_otp(response_data, otp_code)
         return Response(response_data, status=status.HTTP_200_OK)
-    
+
+
 class MeView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={"request": request}).data)
+
 
 class ProfileView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = UserSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)

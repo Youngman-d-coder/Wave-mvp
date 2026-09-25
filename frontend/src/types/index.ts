@@ -12,15 +12,13 @@ export interface User {
   is_verified: boolean;
   created_at: string;
   updated_at: string;
-  favorite_riders?: Rider[];
   total_deliveries?: number;
   total_spent?: number;
 }
 
 export interface Customer extends User {
-  favorite_riders: Rider[];
-  total_deliveries: number;
-  total_spent: number;
+  total_deliveries?: number;
+  total_spent?: number;
 }
 
 export interface Rider extends User {
@@ -111,11 +109,33 @@ export type PackageType =
   | 'large_package'
   | 'fragile';
 
+export interface DeliveryCustomer {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  avatar?: string | null;
+}
+
+export interface DeliveryRider {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  avatar?: string | null;
+  is_verified: boolean;
+  vehicle: Vehicle;
+  stats: Pick<RiderStats, 'total_kilometers' | 'successful_rides'>;
+  is_online: boolean;
+  current_location?: GeoLocation | null;
+  rating: number;
+  total_reviews: number;
+  status: 'online' | 'offline' | 'busy';
+}
+
 export interface Delivery {
   id: string;
   tracking_number: string;
-  customer: Customer;
-  rider?: Rider;
+  customer: DeliveryCustomer;
+  rider?: DeliveryRider | null;
   pickup: DeliveryLocation;
   dropoff: DeliveryLocation;
   package: PackageDetails;
@@ -128,6 +148,26 @@ export interface Delivery {
   updated_at: string;
   estimated_distance: number;
   estimated_duration: number;
+}
+
+
+export interface DeliveryCreateRequest {
+  pickup: { coordinates: GeoLocation; address?: string; instructions?: string };
+  dropoff: { coordinates: GeoLocation; address?: string; instructions?: string };
+  recipientName: string;
+  recipientPhone: string;
+  packageType: PackageType;
+  weight: number;
+  notes?: string;
+}
+
+export interface DeliveryRequest {
+  id: string;
+  pickup: string;
+  dropoff: string;
+  distance: string;
+  estimated_fare: number;
+  package_type: string;
 }
 
 export interface DeliveryLocation {
@@ -269,7 +309,7 @@ export interface DashboardStats {
   pending_withdrawals?: number;
   revenue_trend?: number;
   today_trend?: number;
-  riders_trend?: number;
+  riders_trend?: number | null;
   deliveries_trend?: number;
   recent_activity?: { type: string; description: string; time: string }[];
   top_riders?: { id: string; name: string; avatar?: string; deliveries: number; earnings: number; rating: number }[];

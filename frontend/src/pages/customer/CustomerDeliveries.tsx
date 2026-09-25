@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Package, MapPin, Calendar } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
@@ -15,18 +15,16 @@ export const CustomerDeliveries: React.FC = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setIsLoading(true);
-    const result = await getHistory();
+    const result = await getHistory(1, 100);
     if (!result.success) {
       showError(result.message || 'Failed to load delivery history');
     }
     setIsLoading(false);
-  };
+  }, [getHistory, showError]);
+
+  useEffect(() => { void loadHistory(); }, [loadHistory]);
 
   const activeStatuses = ['pending', 'searching_rider', 'rider_assigned', 'rider_arrived', 'picked_up', 'in_transit', 'near_destination'];
   const completedStatuses = ['delivered'];
