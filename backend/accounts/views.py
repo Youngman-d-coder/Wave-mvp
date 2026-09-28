@@ -22,6 +22,9 @@ def _generate_otp() -> str:
 
 
 def _store_otp(phone: str, code: str) -> None:
+    if not phone:
+        raise ValueError("A phone number is required to create an OTP verification.")
+
     verification, created = OTPVerification.objects.get_or_create(
         phone=phone,
         defaults={"otp_code": make_password(code), "is_verified": False},
@@ -108,7 +111,19 @@ class LoginView(views.APIView):
         if not user.is_active or not user.check_password(password):
             return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Trusted staff/admin accounts are created by administration rather than
+        # public registration, so they do not require customer/rider phone OTP.
+        if user.is_staff and user.user_type == "admin" and not user.is_verified:
+            user.is_verified = True
+            user.save(update_fields=["is_verified"])
+
         if not user.is_verified:
+            if not user.phone:
+                return Response(
+                    {"message": "A phone number is required before this account can be verified."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             otp_code = _issue_otp(user.phone)
             response_data = {
                 "message": "Phone number not verified. A new OTP has been sent.",
@@ -170,7 +185,6 @@ class ResendOTPView(views.APIView):
         try:
             user = User.objects.get(phone=phone)
         except User.DoesNotExist:
-            # Avoid making this endpoint an account-enumeration oracle.
             return Response({"message": "If the account exists, a new OTP has been sent."})
 
         if user.is_verified:

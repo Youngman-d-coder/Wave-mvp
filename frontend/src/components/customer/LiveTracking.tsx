@@ -25,7 +25,9 @@ const statusSteps: { status: DeliveryStatus; label: string; icon: React.ReactNod
 ];
 
 export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRider }) => {
-  const [riderLocation, setRiderLocation] = useState<GeoLocation | undefined>(delivery.rider?.current_location);
+  const [riderLocation, setRiderLocation] = useState<GeoLocation | undefined>(
+    delivery.rider?.current_location ?? undefined,
+  );
   const [currentStatus, setCurrentStatus] = useState<DeliveryStatus>(delivery.status);
   const [eta, setEta] = useState(delivery.estimated_duration);
   const { subscribe } = useWebSocket();
@@ -74,7 +76,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
 
   return (
     <div className="space-y-6">
-      {/* Map */}
       <div className="h-64 sm:h-80 rounded-2xl overflow-hidden">
         <Map
           pickup={delivery.pickup?.coordinates}
@@ -85,15 +86,14 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
         />
       </div>
 
-      {/* Rider Card */}
       {delivery.rider && (
         <Card className="p-4">
           <div className="flex items-center gap-4">
-            <Avatar 
-              src={delivery.rider.avatar} 
-              name={delivery.rider.full_name || 'Rider'} 
-              size="lg" 
-              status={delivery.rider.is_online ? 'online' : 'offline'} 
+            <Avatar
+              src={delivery.rider.avatar ?? undefined}
+              name={delivery.rider.full_name || 'Rider'}
+              size="lg"
+              status={delivery.rider.is_online ? 'online' : 'offline'}
             />
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -106,10 +106,10 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
                   </span>
                 )}
               </div>
-              <Rating 
-                rating={delivery.rider.rating || 0} 
-                reviewCount={delivery.rider.total_reviews || 0} 
-                size="sm" 
+              <Rating
+                rating={delivery.rider.rating || 0}
+                reviewCount={delivery.rider.total_reviews || 0}
+                size="sm"
               />
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
                 <span>{(delivery.rider.stats?.total_kilometers || 0).toFixed(1)} km driven</span>
@@ -117,9 +117,9 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
               </div>
             </div>
             <div className="flex gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="p-2"
                 onClick={() => delivery.rider?.phone && window.open(`tel:${delivery.rider.phone}`, '_self')}
                 disabled={!delivery.rider.phone}
@@ -131,7 +131,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
         </Card>
       )}
 
-      {/* Status Timeline */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-heading font-bold text-gray-900 dark:text-white">Delivery Status</h3>
@@ -148,8 +147,8 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
               return (
                 <div key={step.status} className="relative flex items-center gap-4">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${
-                    isCompleted 
-                      ? 'bg-wave-500 text-white' 
+                    isCompleted
+                      ? 'bg-wave-500 text-white'
                       : 'bg-gray-200 dark:bg-dark-border text-gray-400'
                   } ${isCurrent ? 'ring-4 ring-wave-500/20' : ''}`}>
                     {step.icon}
@@ -171,7 +170,6 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({ delivery, onRateRide
         </div>
       </Card>
 
-      {/* Rating Section */}
       {isDelivered && onRateRider && !showRating && !hasRated && (
         <Card className="p-6 text-center">
           <h3 className="font-heading font-bold text-gray-900 dark:text-white mb-2">

@@ -28,7 +28,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const connect = useCallback(() => {
     const currentToken = tokenRef.current;
-    if (!shouldReconnectRef.current || !currentToken || [WebSocket.OPEN, WebSocket.CONNECTING].includes(wsRef.current?.readyState ?? -1)) return;
+    const readyState = wsRef.current?.readyState;
+
+    if (
+      !shouldReconnectRef.current ||
+      !currentToken ||
+      readyState === WebSocket.OPEN ||
+      readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
 
     const ws = new WebSocket(`${WS_BASE_URL}/?token=${encodeURIComponent(currentToken)}`);
     wsRef.current = ws;
